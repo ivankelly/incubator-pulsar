@@ -484,3 +484,8 @@ message BaseCommand {
 	
 	optional CommandSeek seek = 28;
 }
+
+message CompactedMessage {
+    optional MessageIdData id = 1;
+    optional MessageMetadata metadata = 2;
+}
