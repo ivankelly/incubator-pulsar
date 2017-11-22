@@ -82,6 +82,7 @@ public abstract class AbstractDispatcherSingleActiveConsumer {
     protected abstract void cancelPendingRead();
 
     protected void pickAndScheduleActiveConsumer() {
+        log.info("IKDEBUG pick and schedule");
         checkArgument(!consumers.isEmpty());
 
         consumers.sort((c1, c2) -> c1.consumerName().compareTo(c2.consumerName()));

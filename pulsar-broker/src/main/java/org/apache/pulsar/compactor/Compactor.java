@@ -30,12 +30,17 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.pulsar.common.api.DoubleByteBuf;
 import org.apache.pulsar.client.api.*;
+import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.MessageImplAccessor;
 import org.apache.pulsar.common.api.proto.PulsarApi.CompactedMessage;
 import org.apache.pulsar.common.api.proto.PulsarApi.MessageIdData;
 import org.apache.pulsar.common.util.protobuf.ByteBufCodedOutputStream;
 import org.apache.pulsar.common.util.protobuf.ByteBufCodedInputStream;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.impl.EntryImpl;
+import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.Entry;
 
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
@@ -45,7 +50,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
-class Compactor {
+public class Compactor {
     private static final Logger log = LoggerFactory.getLogger(Compactor.class);
 
     final ExecutorService executor;
@@ -60,18 +65,28 @@ class Compactor {
         this.bk = bk;
     }
 
-    public CompletableFuture<Long> compact(String topic) {
-        final CompletableFuture<Long> future = new CompletableFuture<>();
+    public static class CompactionSpec {
+        public final MessageIdImpl position;
+        public final long ledgerId;
+
+        CompactionSpec(MessageIdImpl position, long ledgerId) {
+            this.position = position;
+            this.ledgerId = ledgerId;
+        }
+    }
+
+    public CompletableFuture<CompactionSpec> compact(String topic) {
+        final CompletableFuture<CompactionSpec> future
+            = new CompletableFuture<>();
         executor.submit(new CompactionTask(topic, future));
         return future;
     }
 
     private class CompactionTask implements Runnable {
         final String topic;
-        final CompletableFuture<Long> future;
+        final CompletableFuture<CompactionSpec> future;
 
-
-        CompactionTask(String topic, CompletableFuture<Long> future) {
+        CompactionTask(String topic, CompletableFuture<CompactionSpec> future) {
             this.topic = topic;
             this.future = future;
         }
@@ -117,6 +132,7 @@ class Compactor {
                         Message m = consumer.receive();
                         current = m.getMessageId();
                         if (latestForKey.get(m.getKey()).equals(m.getMessageId())) {
+                            log.info("IKDEBUG compacting key " + m.getKey());
                             ByteBuf serialized = serializeMessage(m);
                             final CompletableFuture<Void> f
                                 = new CompletableFuture<>();
@@ -137,7 +153,10 @@ class Compactor {
                         lastFuture.get();
                     }
                     lh.close();
-                    future.complete(lh.getId());
+
+                    CompactionSpec spec
+                        = new CompactionSpec((MessageIdImpl)lastMessageId, lh.getId());
+                    future.complete(spec);
                 }
             } catch (Exception e) {
                 future.completeExceptionally(e);
@@ -165,10 +184,12 @@ class Compactor {
         compacted.writeTo(outStream);
         outStream.recycle();
         ByteBuf payload = MessageImplAccessor.getPayload(m);
-        return DoubleByteBuf.get(headers, payload);
+        log.info("IKDEBUG payload {} {}",
+                 payload, ((MessageImpl)m).originalPayload);
+        return DoubleByteBuf.get(headers, ((MessageImpl)m).originalPayload);
     }
 
-    public static Message deserializeMessage(ByteBuf buf) throws IOException {
+    /*    public static Message deserializeMessage(ByteBuf buf) throws IOException {
         CompactedMessage.Builder builder = CompactedMessage.newBuilder();
         int size = (int) buf.readUnsignedInt();
         int writerIndex = buf.writerIndex();
@@ -181,5 +202,31 @@ class Compactor {
         return MessageImplAccessor.newMessage(compacted.getId(),
                                               compacted.getMetadata(),
                                               payload);
+                                              }*/
+
+    public static MessageIdImpl toMessageId(ByteBuf buf) throws IOException {
+        CompactedMessage.Builder builder = CompactedMessage.newBuilder();
+        int size = (int) buf.readUnsignedInt();
+        int writerIndex = buf.writerIndex();
+        buf.writerIndex(buf.readerIndex() + size);
+        ByteBufCodedInputStream inStream = ByteBufCodedInputStream.get(buf);
+        CompactedMessage compacted = builder.mergeFrom(inStream, null).build();
+        return new MessageIdImpl(compacted.getId().getLedgerId(),
+                                 compacted.getId().getEntryId(), -1);
+    }
+
+    public static Entry toMLEntry(ByteBuf buf) throws IOException {
+        CompactedMessage.Builder builder = CompactedMessage.newBuilder();
+        int size = (int) buf.readUnsignedInt();
+        int writerIndex = buf.writerIndex();
+        buf.writerIndex(buf.readerIndex() + size);
+        ByteBufCodedInputStream inStream = ByteBufCodedInputStream.get(buf);
+        CompactedMessage compacted = builder.mergeFrom(inStream, null).build();
+        buf.writerIndex(writerIndex);
+        ByteBuf payload = buf.copy();
+        log.info("IKDEBUG toMLEntry payload {}", payload);
+        return EntryImpl.create(compacted.getId().getLedgerId(),
+                                compacted.getId().getEntryId(),
+                                payload);
     }
 }

@@ -25,6 +25,7 @@ import io.netty.buffer.ByteBuf;
 import java.util.HashMap;
 import java.util.Enumeration;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.LedgerHandle;
@@ -74,10 +75,6 @@ public class CompactorTest extends MockedPulsarServiceBaseTest {
         ConsumerConfiguration conf = new ConsumerConfiguration();
         conf.setSubscriptionType(SubscriptionType.Exclusive);
 
-        Consumer consumer = pulsarClient.subscribe(
-                topic,
-                "my-subscriber-name",
-                conf);
 
         ProducerConfiguration producerConf = new ProducerConfiguration();
         Producer producer = pulsarClient.createProducer(topic, producerConf);
@@ -99,20 +96,29 @@ public class CompactorTest extends MockedPulsarServiceBaseTest {
                 this.conf, null);
         Compactor compactor = new Compactor(pulsarClient, bk,
                                             MoreExecutors.sameThreadExecutor());
-        long compactedLedgerId = compactor.compact(topic).get();
+        Compactor.CompactionSpec compacted = compactor.compact(topic).get();
+        CompactionNotification notification
+            = new CompactionNotification(mockZookKeeper);
+        notification.topicCompacted(topic, compacted);
+        log.info("IKDEBUG seek to earliest");
+        Consumer consumer = pulsarClient.subscribe(
+                topic,
+                "my-subscriber-name",
+                conf);
 
-        LedgerHandle ledger = bk.openLedger(
-                compactedLedgerId, BookKeeper.DigestType.CRC32, "".getBytes());
-        Assert.assertEquals(ledger.getLastAddConfirmed() + 1, // 0..lac
-                            numKeys,
-                            "Should have as many entries as there is keys");
-        Enumeration<LedgerEntry> entries = ledger.readEntries(1, ledger.getLastAddConfirmed());
-        while (entries.hasMoreElements()) {
-            ByteBuf buf = entries.nextElement().getEntryBuffer();
-            Message m = Compactor.deserializeMessage(buf);
+        consumer.seek(MessageId.earliest);
 
+        while (true) {
+            Message m = consumer.receive(1, TimeUnit.SECONDS);
+            log.info("IKDEBUG got key {}", m == null ? m : m.getKey());
+            if (m == null) {
+                break;
+            }
             Assert.assertEquals(m.getData(), expected.remove(m.getKey()),
                                 "Compacted version should match expected version");
         }
+        log.info("expected {}", expected);
+        Assert.assertTrue(expected.isEmpty(),
+                          "All expected keys should have been received");
     }
 }

@@ -37,7 +37,7 @@ public class MessageImplAccessor {
     public static Message newMessage(MessageIdData messageId, MessageMetadata msgMetadata,
                                      ByteBuf payload) {
         return new MessageImpl(messageId, msgMetadata,
-                               payload, -1, null);
+                payload, -1, null, payload.copy());
     }
 
 }

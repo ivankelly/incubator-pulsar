@@ -176,6 +176,7 @@ public final class PersistentDispatcherSingleActiveConsumer extends AbstractDisp
 
     @Override
     public synchronized void consumerFlow(Consumer consumer, int additionalNumberOfMessages) {
+        log.info("IKDEBUG consumerFlow");
         if (havePendingRead) {
             if (log.isDebugEnabled()) {
                 log.debug("[{}-{}] Ignoring flow control message since we already have a pending read req", name,
@@ -238,6 +239,7 @@ public final class PersistentDispatcherSingleActiveConsumer extends AbstractDisp
 
     @Override
     protected void readMoreEntries(Consumer consumer) {
+        log.info("IKDEBUG readMoreEntries");
         int availablePermits = consumer.getAvailablePermits();
 
         if (availablePermits > 0) {
@@ -287,11 +289,14 @@ public final class PersistentDispatcherSingleActiveConsumer extends AbstractDisp
             }
 
             // Schedule read
-            if (log.isDebugEnabled()) {
-                log.debug("[{}-{}] Schedule read of {} messages", name, consumer, messagesToRead);
-            }
+            log.info("[{}-{}] Schedule read of {} messages {}", name, consumer, messagesToRead, cursor);
+
             havePendingRead = true;
-            cursor.asyncReadEntriesOrWait(messagesToRead, this, consumer);
+
+            // try to read from compaction
+            if (!topic.compacted.asyncReadEntries(cursor, messagesToRead, this, consumer)) {
+                cursor.asyncReadEntriesOrWait(messagesToRead, this, consumer);
+            }
         } else {
             if (log.isDebugEnabled()) {
                 log.debug("[{}-{}] Consumer buffer is full, pause reading", name, consumer);

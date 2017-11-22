@@ -33,6 +33,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
+import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
 import org.apache.bookkeeper.util.OrderedSafeExecutor;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
@@ -93,6 +94,7 @@ public class PulsarService implements AutoCloseable {
     private ConfigurationCacheService configurationCacheService = null;
     private LocalZooKeeperCacheService localZkCacheService = null;
     private BookKeeperClientFactory bkClientFactory;
+    private BookKeeper bkClient = null;
     private ZooKeeperCache localZkCache;
     private GlobalZooKeeperCache globalZkCache;
     private LocalZooKeeperConnectionService localZooKeeperConnectionProvider;
@@ -254,6 +256,8 @@ public class PulsarService implements AutoCloseable {
             this.startZkCacheService();
 
             this.bkClientFactory = getBookKeeperClientFactory();
+            this.bkClient = bkClientFactory.create(config, getZkClient());
+
             managedLedgerClientFactory = new ManagedLedgerClientFactory(config, getZkClient(), bkClientFactory);
 
             this.brokerService = new BrokerService(this);
@@ -492,6 +496,10 @@ public class PulsarService implements AutoCloseable {
 
     public ZooKeeper getZkClient() {
         return this.localZooKeeperConnectionProvider.getLocalZooKeeper();
+    }
+
+    public BookKeeper getBkClient() {
+        return this.bkClient;
     }
 
     public ConfigurationCacheService getConfigurationCache() {
