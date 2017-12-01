@@ -732,7 +732,8 @@ public class ConsumerImpl extends ConsumerBase {
             log.debug("[{}][{}] Received message: {}/{}", topic, subscription, messageId.getLedgerId(),
                     messageId.getEntryId());
         }
-
+        //log.info("IKDEBUG headersAndPayload {}", headersAndPayload);
+        ByteBuf origPayload = headersAndPayload.copy();
         MessageMetadata msgMetadata = null;
         ByteBuf payload = headersAndPayload;
 
@@ -765,9 +766,10 @@ public class ConsumerImpl extends ConsumerBase {
 
         if (numMessages == 1 && !msgMetadata.hasNumMessagesInBatch()) {
             final MessageImpl message = new MessageImpl(messageId, msgMetadata, uncompressedPayload,
-                    getPartitionIndex(), cnx);
+                    getPartitionIndex(), cnx, origPayload);
             uncompressedPayload.release();
             msgMetadata.recycle();
+            origPayload.release();
 
             try {
                 lock.readLock().lock();
@@ -805,6 +807,7 @@ public class ConsumerImpl extends ConsumerBase {
             }
             uncompressedPayload.release();
             msgMetadata.recycle();
+            origPayload.release();
         }
 
         if (listener != null) {

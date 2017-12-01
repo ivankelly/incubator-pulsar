@@ -48,6 +48,7 @@ public class MessageImpl implements Message {
     private MessageId messageId;
     private ClientCnx cnx;
     private ByteBuf payload;
+    public ByteBuf originalPayload;
 
     transient private Map<String, String> properties;
 
@@ -64,7 +65,7 @@ public class MessageImpl implements Message {
 
     // Constructor for incoming message
     MessageImpl(MessageIdData messageId, MessageMetadata msgMetadata, ByteBuf payload, int partitionIndex,
-            ClientCnx cnx) {
+                ClientCnx cnx, ByteBuf originalPayload) {
         this.msgMetadataBuilder = MessageMetadata.newBuilder(msgMetadata);
         this.messageId = new MessageIdImpl(messageId.getLedgerId(), messageId.getEntryId(), partitionIndex);
         this.cnx = cnx;
@@ -73,6 +74,7 @@ public class MessageImpl implements Message {
         // release, since the Message is passed to the user. Also, the passed ByteBuf is coming from network and is
         // backed by a direct buffer which we could not expose as a byte[]
         this.payload = Unpooled.copiedBuffer(payload);
+        this.originalPayload = Unpooled.copiedBuffer(originalPayload);
 
         if (msgMetadata.getPropertiesCount() > 0) {
             Map<String, String> properties = Maps.newTreeMap();

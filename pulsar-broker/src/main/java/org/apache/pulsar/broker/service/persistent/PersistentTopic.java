@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -95,6 +96,8 @@ import org.apache.pulsar.common.util.Codec;
 import org.apache.pulsar.common.util.DateFormatter;
 import org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap;
 import org.apache.pulsar.common.util.collections.ConcurrentOpenHashSet;
+
+import org.apache.pulsar.compactor.CompactionNotification;
 import org.apache.pulsar.policies.data.loadbalancer.NamespaceBundleStats;
 import org.apache.pulsar.utils.StatsOutputStream;
 import org.apache.zookeeper.KeeperException;
@@ -154,6 +157,7 @@ public class PersistentTopic implements Topic, AddEntryCallback {
     public static final int MESSAGE_RATE_BACKOFF_MS = 1000;
 
     private final MessageDeduplication messageDeduplication;
+    final CompactedTopic compacted;
 
     private static final FastThreadLocal<TopicStats> threadLocalTopicStats = new FastThreadLocal<TopicStats>() {
         @Override
@@ -218,6 +222,15 @@ public class PersistentTopic implements Topic, AddEntryCallback {
         this.lastActive = System.nanoTime();
 
         this.messageDeduplication = new MessageDeduplication(brokerService.pulsar(), this, ledger);
+        this.compacted = new CompactedTopic(brokerService.pulsar().getBkClient());
+
+        CompactionNotification notif = new CompactionNotification(
+                brokerService.pulsar().getZkClient());
+        notif.getCompacted(topic,
+                           (spec) -> {
+                               log.info("IKDEBUG Notificed new compaction spec {}", spec);
+                               compacted.setSpec(spec);
+                           });
     }
 
     @Override

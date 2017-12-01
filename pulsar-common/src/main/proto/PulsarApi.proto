@@ -484,3 +484,13 @@ message BaseCommand {
 	
 	optional CommandSeek seek = 28;
 }
+
+message CompactedMessage {
+    optional MessageIdData id = 1;
+    optional MessageMetadata metadata = 2;
+}
+
+message CompactionSpec {
+    optional bytes cursor = 1;
+    optional uint64 ledger = 2;
+}
