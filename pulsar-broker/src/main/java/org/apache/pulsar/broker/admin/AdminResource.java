@@ -215,7 +215,7 @@ public abstract class AdminResource extends PulsarWebResource {
         String brokerUrl = String.format("http://%s", broker);
         if (!pulsar().getWebServiceAddress().equals(brokerUrl)) {
             String[] parts = broker.split(":");
-            checkArgument(parts.length == 2);
+            checkArgument(parts.length == 2, "Invalid broker url %s", broker);
             String host = parts[0];
             int port = Integer.parseInt(parts[1]);
 
@@ -231,7 +231,7 @@ public abstract class AdminResource extends PulsarWebResource {
                     .orElseThrow(() -> new RestException(Status.NOT_FOUND, "Namespace does not exist"));
             // fetch bundles from LocalZK-policies
             NamespaceBundles bundles = pulsar().getNamespaceService().getNamespaceBundleFactory()
-                    .getBundles(new NamespaceName(property, cluster, namespace));
+                    .getBundles(NamespaceName.get(property, cluster, namespace));
             BundlesData bundleData = NamespaceBundleFactory.getBundlesData(bundles);
             policies.bundles = bundleData != null ? bundleData : policies.bundles;
             return policies;
@@ -291,7 +291,11 @@ public abstract class AdminResource extends PulsarWebResource {
             String destination, boolean authoritative) {
         DestinationName dn = DestinationName.get(domain(), property, cluster, namespace, destination);
         validateClusterOwnership(dn.getCluster());
-
+        // validates global-namespace contains local/peer cluster: if peer/local cluster present then lookup can
+        // serve/redirect request else fail partitioned-metadata-request so, client fails while creating
+        // producer/consumer
+        validateGlobalNamespaceOwnership(dn.getNamespaceObject());
+        
         try {
             checkConnect(dn);
         } catch (WebApplicationException e) {

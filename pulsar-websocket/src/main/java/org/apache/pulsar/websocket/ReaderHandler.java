@@ -40,8 +40,10 @@ import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.ReaderImpl;
 import org.apache.pulsar.common.naming.DestinationName;
+import org.apache.pulsar.common.util.DateFormatter;
 import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.apache.pulsar.websocket.data.ConsumerMessage;
+import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.api.WriteCallback;
 import org.eclipse.jetty.websocket.servlet.ServletUpgradeResponse;
 import org.slf4j.Logger;
@@ -86,7 +88,6 @@ public class ReaderHandler extends AbstractWebSocketHandler {
                 log.warn("[{}:{}] Failed to add reader handler for topic {}", request.getRemoteAddr(),
                         request.getRemotePort(), topic);
             }
-            receiveMessage();
         } catch (Exception e) {
             log.warn("[{}:{}] Failed in creating reader {} on topic {}", request.getRemoteAddr(),
                     request.getRemotePort(), subscription, topic, e);
@@ -114,7 +115,10 @@ public class ReaderHandler extends AbstractWebSocketHandler {
             dm.messageId = Base64.getEncoder().encodeToString(msg.getMessageId().toByteArray());
             dm.payload = Base64.getEncoder().encodeToString(msg.getData());
             dm.properties = msg.getProperties();
-            dm.publishTime = DATE_FORMAT.format(Instant.ofEpochMilli(msg.getPublishTime()));
+            dm.publishTime = DateFormatter.format(msg.getPublishTime());
+            if (msg.getEventTime() != 0) {
+                dm.eventTime = DateFormatter.format(msg.getEventTime());
+            }
             if (msg.hasKey()) {
                 dm.key = msg.getKey();
             }
@@ -155,6 +159,12 @@ public class ReaderHandler extends AbstractWebSocketHandler {
                     subscription, getRemote().getInetSocketAddress().toString(), exception);
             return null;
         });
+    }
+
+    @Override
+    public void onWebSocketConnect(Session session) {
+        super.onWebSocketConnect(session);
+        receiveMessage();
     }
 
     @Override
@@ -247,8 +257,6 @@ public class ReaderHandler extends AbstractWebSocketHandler {
         }
         return messageId;
     }
-
-    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSZ").withZone(ZoneId.systemDefault());
 
     private static final Logger log = LoggerFactory.getLogger(ReaderHandler.class);
 

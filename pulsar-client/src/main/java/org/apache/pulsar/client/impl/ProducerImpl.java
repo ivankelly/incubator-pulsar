@@ -55,7 +55,7 @@ import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
 import org.apache.pulsar.common.api.proto.PulsarApi.ProtocolVersion;
 import org.apache.pulsar.common.compression.CompressionCodec;
 import org.apache.pulsar.common.compression.CompressionCodecProvider;
-
+import org.apache.pulsar.common.util.DateFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -459,18 +459,18 @@ public class ProducerImpl extends ProducerBase implements TimerTask {
             producer = null;
             cnx = null;
             op = null;
-            RECYCLER.recycle(this, recyclerHandle);
+            recyclerHandle.recycle(this);
         }
 
-        private final Handle recyclerHandle;
+        private final Handle<WriteInEventLoopCallback> recyclerHandle;
 
-        private WriteInEventLoopCallback(Handle recyclerHandle) {
+        private WriteInEventLoopCallback(Handle<WriteInEventLoopCallback> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
 
         private static final Recycler<WriteInEventLoopCallback> RECYCLER = new Recycler<WriteInEventLoopCallback>() {
             @Override
-            protected WriteInEventLoopCallback newObject(Handle handle) {
+            protected WriteInEventLoopCallback newObject(Handle<WriteInEventLoopCallback> handle) {
                 return new WriteInEventLoopCallback(handle);
             }
         };
@@ -759,7 +759,7 @@ public class ProducerImpl extends ProducerBase implements TimerTask {
             callback = null;
             sequenceId = -1;
             createdAt = -1;
-            RECYCLER.recycle(this, recyclerHandle);
+            recyclerHandle.recycle(this);
         }
 
         void setNumMessagesInBatch(int numMessagesInBatch) {
@@ -781,14 +781,14 @@ public class ProducerImpl extends ProducerBase implements TimerTask {
             }
         }
 
-        private OpSendMsg(Handle recyclerHandle) {
+        private OpSendMsg(Handle<OpSendMsg> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
 
-        private final Handle recyclerHandle;
+        private final Handle<OpSendMsg> recyclerHandle;
         private static final Recycler<OpSendMsg> RECYCLER = new Recycler<OpSendMsg>() {
             @Override
-            protected OpSendMsg newObject(Handle handle) {
+            protected OpSendMsg newObject(Handle<OpSendMsg> handle) {
                 return new OpSendMsg(handle);
             }
         };
@@ -824,7 +824,7 @@ public class ProducerImpl extends ProducerBase implements TimerTask {
 
                         log.info("[{}] [{}] Created producer on cnx {}", topic, producerName, cnx.ctx().channel());
                         connectionId = cnx.ctx().channel().toString();
-                        connectedSince = DATE_FORMAT.format(Instant.now());
+                        connectedSince = DateFormatter.now();
 
                         if (this.producerName == null) {
                             this.producerName = producerName;
@@ -899,6 +899,7 @@ public class ProducerImpl extends ProducerBase implements TimerTask {
                 && producerCreatedFuture.completeExceptionally(exception)) {
             log.info("[{}] Producer creation failed for producer {}", topic, producerId);
             setState(State.Failed);
+            client.cleanupProducer(this);
         }
     }
 
@@ -1238,9 +1239,6 @@ public class ProducerImpl extends ProducerBase implements TimerTask {
     public int getPendingQueueSize() {
         return pendingMessages.size();
     }
-
-    private static DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSZ")
-            .withZone(ZoneId.systemDefault());
 
     private PulsarApi.CompressionType convertCompressionType(CompressionType compressionType) {
         switch (compressionType) {

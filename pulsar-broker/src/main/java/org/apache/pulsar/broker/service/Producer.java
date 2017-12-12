@@ -19,12 +19,11 @@
 package org.apache.pulsar.broker.service;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.apache.pulsar.broker.service.persistent.PersistentTopic.DATE_FORMAT;
 import static org.apache.pulsar.checksum.utils.Crc32cChecksum.computeChecksum;
 import static org.apache.pulsar.common.api.Commands.hasChecksum;
 import static org.apache.pulsar.common.api.Commands.readChecksum;
 
-import java.time.Instant;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
@@ -38,11 +37,12 @@ import org.apache.pulsar.common.api.proto.PulsarApi.ServerError;
 import org.apache.pulsar.common.naming.DestinationName;
 import org.apache.pulsar.common.policies.data.NonPersistentPublisherStats;
 import org.apache.pulsar.common.policies.data.PublisherStats;
+import org.apache.pulsar.common.util.DateFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Objects;
+import com.google.common.base.MoreObjects;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
@@ -85,7 +85,7 @@ public class Producer {
         this.msgDrop = this.isNonPersistentTopic ? new Rate() : null;
         this.stats = isNonPersistentTopic ? new NonPersistentPublisherStats() : new PublisherStats();
         stats.address = cnx.clientAddress().toString();
-        stats.connectedSince = DATE_FORMAT.format(Instant.now());
+        stats.connectedSince = DateFormatter.now();
         stats.clientVersion = cnx.getClientVersion();
         stats.producerName = producerName;
         stats.producerId = producerId;
@@ -97,14 +97,14 @@ public class Producer {
 
     @Override
     public int hashCode() {
-        return Objects.hashCode(producerName);
+        return Objects.hash(producerName);
     }
 
     @Override
     public boolean equals(Object obj) {
         if (obj instanceof Producer) {
             Producer other = (Producer) obj;
-            return Objects.equal(producerName, other.producerName) && Objects.equal(topic, other.topic);
+            return Objects.equals(producerName, other.producerName) && Objects.equals(topic, other.topic);
         }
 
         return false;
@@ -299,14 +299,14 @@ public class Producer {
             return callback;
         }
 
-        private final Handle recyclerHandle;
+        private final Handle<MessagePublishContext> recyclerHandle;
 
-        private MessagePublishContext(Handle recyclerHandle) {
+        private MessagePublishContext(Handle<MessagePublishContext> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
 
         private static final Recycler<MessagePublishContext> RECYCLER = new Recycler<MessagePublishContext>() {
-            protected MessagePublishContext newObject(Recycler.Handle handle) {
+            protected MessagePublishContext newObject(Recycler.Handle<MessagePublishContext> handle) {
                 return new MessagePublishContext(handle);
             }
         };
@@ -319,7 +319,7 @@ public class Producer {
             ledgerId = -1;
             entryId = -1;
             batchSize = 0;
-            RECYCLER.recycle(this, recyclerHandle);
+            recyclerHandle.recycle(this);
         }
     }
 
@@ -337,7 +337,7 @@ public class Producer {
 
     @Override
     public String toString() {
-        return Objects.toStringHelper(this).add("topic", topic).add("client", cnx.clientAddress())
+        return MoreObjects.toStringHelper(this).add("topic", topic).add("client", cnx.clientAddress())
                 .add("producerName", producerName).add("producerId", producerId).toString();
     }
 

@@ -19,12 +19,11 @@
 package org.apache.pulsar.broker.service;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static org.apache.pulsar.broker.service.persistent.PersistentTopic.DATE_FORMAT;
 import static org.apache.pulsar.common.api.Commands.readChecksum;
 
-import java.time.Instant;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
@@ -33,23 +32,21 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.bookkeeper.mledger.util.Rate;
 import org.apache.bookkeeper.util.collections.ConcurrentLongLongPairHashMap;
 import org.apache.bookkeeper.util.collections.ConcurrentLongLongPairHashMap.LongPair;
-import org.apache.commons.lang3.tuple.MutablePair;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.common.api.Commands;
 import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandAck;
-import org.apache.pulsar.common.api.proto.PulsarApi.MessageIdData;
-import org.apache.pulsar.common.api.proto.PulsarApi.MessageMetadata;
-import org.apache.pulsar.common.api.proto.PulsarApi.ProtocolVersion;
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandAck.AckType;
 import org.apache.pulsar.common.api.proto.PulsarApi.CommandSubscribe.SubType;
+import org.apache.pulsar.common.api.proto.PulsarApi.MessageIdData;
+import org.apache.pulsar.common.api.proto.PulsarApi.ProtocolVersion;
 import org.apache.pulsar.common.naming.DestinationName;
 import org.apache.pulsar.common.policies.data.ConsumerStats;
+import org.apache.pulsar.common.util.DateFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Objects;
+import com.google.common.base.MoreObjects;
 import com.google.common.collect.Lists;
 
 import io.netty.buffer.ByteBuf;
@@ -117,7 +114,7 @@ public class Consumer {
         stats = new ConsumerStats();
         stats.address = cnx.clientAddress().toString();
         stats.consumerName = consumerName;
-        stats.connectedSince = DATE_FORMAT.format(Instant.now());
+        stats.connectedSince = DateFormatter.now();
         stats.clientVersion = cnx.getClientVersion();
 
         if (subType == SubType.Shared) {
@@ -435,7 +432,7 @@ public class Consumer {
 
     @Override
     public String toString() {
-        return Objects.toStringHelper(this).add("subscription", subscription).add("consumerId", consumerId)
+        return MoreObjects.toStringHelper(this).add("subscription", subscription).add("consumerId", consumerId)
                 .add("consumerName", consumerName).add("address", this.cnx.clientAddress()).toString();
     }
 
@@ -464,7 +461,7 @@ public class Consumer {
     public boolean equals(Object obj) {
         if (obj instanceof Consumer) {
             Consumer other = (Consumer) obj;
-            return Objects.equal(cnx.clientAddress(), other.cnx.clientAddress()) && consumerId == other.consumerId;
+            return Objects.equals(cnx.clientAddress(), other.cnx.clientAddress()) && consumerId == other.consumerId;
         }
         return false;
     }

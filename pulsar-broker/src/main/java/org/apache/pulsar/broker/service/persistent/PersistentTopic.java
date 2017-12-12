@@ -93,6 +93,7 @@ import org.apache.pulsar.common.policies.data.ReplicatorStats;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.SubscriptionStats;
 import org.apache.pulsar.common.util.Codec;
+import org.apache.pulsar.common.util.DateFormatter;
 import org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap;
 import org.apache.pulsar.common.util.collections.ConcurrentOpenHashSet;
 
@@ -104,7 +105,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.carrotsearch.hppc.ObjectObjectHashMap;
-import com.google.common.base.Objects;
+import com.google.common.base.MoreObjects;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -145,8 +146,6 @@ public class PersistentTopic implements Topic, AddEntryCallback {
     private static final double MESSAGE_EXPIRY_THRESHOLD = 1.5;
 
     private static final long POLICY_UPDATE_FAILURE_RETRY_TIME_SECONDS = 60;
-
-    public static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSZ").withZone(ZoneId.systemDefault());
 
     // Timestamp of when this topic was last seen active
     private volatile long lastActive;
@@ -266,8 +265,6 @@ public class PersistentTopic implements Topic, AddEntryCallback {
             // Use generic persistence exception
             callback.completed(new PersistenceException(exception), -1, -1);
         }
-
-
 
         if (exception instanceof ManagedLedgerFencedException) {
             // If the managed ledger has been fenced, we cannot continue using it. We need to close and reopen
@@ -512,7 +509,7 @@ public class PersistentTopic implements Topic, AddEntryCallback {
                 // When the start message is relative to a batch, we need to take one step back on the previous message,
                 // because the "batch" might not have been consumed in its entirety.
                 // The client will then be able to discard the first messages in the batch.
-                if (((BatchMessageIdImpl)msgId).getBatchIndex() >= 0) {
+                if (((BatchMessageIdImpl) msgId).getBatchIndex() >= 0) {
                     entryId = msgId.getEntryId() - 1;
                 }
             }
@@ -757,7 +754,7 @@ public class PersistentTopic implements Topic, AddEntryCallback {
         });
         return future;
     }
-    
+
     @Override
     public CompletableFuture<Void> checkReplication() {
         DestinationName name = DestinationName.get(topic);
@@ -904,7 +901,7 @@ public class PersistentTopic implements Topic, AddEntryCallback {
 
     @Override
     public String toString() {
-        return Objects.toStringHelper(this).add("topic", topic).toString();
+        return MoreObjects.toStringHelper(this).add("topic", topic).toString();
     }
 
     @Override
@@ -1097,9 +1094,7 @@ public class PersistentTopic implements Topic, AddEntryCallback {
                         destStatsStream.writePair("blockedSubscriptionOnUnackedMsgs",  dispatcher.isBlockedDispatcherOnUnackedMsgs());
                         destStatsStream.writePair("unackedMessages", dispatcher.getTotalUnackedMessages());
                     }
-
                 }
-
 
                 // Close consumers
                 destStatsStream.endObject();
@@ -1204,10 +1199,9 @@ public class PersistentTopic implements Topic, AddEntryCallback {
         stats.totalSize = ml.getTotalSize();
         stats.currentLedgerEntries = ml.getCurrentLedgerEntries();
         stats.currentLedgerSize = ml.getCurrentLedgerSize();
-        stats.lastLedgerCreatedTimestamp = DATE_FORMAT.format(Instant.ofEpochMilli(ml.getLastLedgerCreatedTimestamp()));
+        stats.lastLedgerCreatedTimestamp = DateFormatter.format(ml.getLastLedgerCreatedTimestamp());
         if (ml.getLastLedgerCreationFailureTimestamp() != 0) {
-            stats.lastLedgerCreationFailureTimestamp = DATE_FORMAT
-                    .format(Instant.ofEpochMilli(ml.getLastLedgerCreationFailureTimestamp()));
+            stats.lastLedgerCreationFailureTimestamp = DateFormatter.format(ml.getLastLedgerCreationFailureTimestamp());
         }
 
         stats.waitingCursorsCount = ml.getWaitingCursorsCount();
@@ -1237,7 +1231,7 @@ public class PersistentTopic implements Topic, AddEntryCallback {
             cs.cursorLedger = cursor.getCursorLedger();
             cs.cursorLedgerLastEntry = cursor.getCursorLedgerLastEntry();
             cs.individuallyDeletedMessages = cursor.getIndividuallyDeletedMessages();
-            cs.lastLedgerSwitchTimestamp = DATE_FORMAT.format(Instant.ofEpochMilli(cursor.getLastLedgerSwitchTimestamp()));
+            cs.lastLedgerSwitchTimestamp = DateFormatter.format(cursor.getLastLedgerSwitchTimestamp());
             cs.state = cursor.getState();
             cs.numberOfEntriesSinceFirstNotAckedMessage = cursor.getNumberOfEntriesSinceFirstNotAckedMessage();
             cs.totalNonContiguousDeletedMessagesRange = cursor.getTotalNonContiguousDeletedMessagesRange();
@@ -1330,18 +1324,10 @@ public class PersistentTopic implements Topic, AddEntryCallback {
         try {
             Optional<Policies> policies = brokerService.pulsar().getConfigurationCache().policiesCache()
                     .get(AdminResource.path(POLICIES, name.getNamespace()));
-            if (!policies.isPresent()) {
-                // If no policies, the default is to have no retention and delete the inactive topic
-                return false;
-            }
-
-            RetentionPolicies retention = policies.get().retention_policies;
-            if (retention == null) {
-                // Same as above, apply default to gc inactive topic
-                return false;
-            }
-
-            return (System.nanoTime() - lastActive < TimeUnit.MINUTES.toNanos(retention.getRetentionTimeInMinutes()));
+            // If no policies, the default is to have no retention and delete the inactive topic
+            return policies.map(p -> p.retention_policies)
+                    .map(rp -> System.nanoTime() - lastActive < TimeUnit.MINUTES.toNanos(rp.getRetentionTimeInMinutes()))
+                    .orElse(false).booleanValue();
         } catch (Exception e) {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Error getting policies", topic);

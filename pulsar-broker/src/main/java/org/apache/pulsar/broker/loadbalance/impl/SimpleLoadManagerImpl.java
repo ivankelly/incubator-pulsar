@@ -299,6 +299,12 @@ public class SimpleLoadManagerImpl implements LoadManager, ZooKeeperCacheListene
                 ZkUtils.createFullPathOptimistic(pulsar.getZkClient(), brokerZnodePath,
                         loadReportJson.getBytes(Charsets.UTF_8), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
             } catch (KeeperException.NodeExistsException e) {
+                long ownerZkSessionId = getBrokerZnodeOwner();
+                if (ownerZkSessionId != 0 && ownerZkSessionId != pulsar.getZkClient().getSessionId()) {
+                    log.error("Broker znode - [{}] is own by different zookeeper-ssession {} ", brokerZnodePath,
+                            ownerZkSessionId);
+                    throw new PulsarServerException("Broker-znode owned by different zk-session " + ownerZkSessionId);
+                }
                 // Node may already be created by another load manager: in this case update the data.
                 if (loadReport != null) {
                     pulsar.getZkClient().setData(brokerZnodePath, loadReportJson.getBytes(Charsets.UTF_8), -1);
@@ -1277,7 +1283,7 @@ public class SimpleLoadManagerImpl implements LoadManager, ZooKeeperCacheListene
 
     // todo: changeme: this can be optimized, we don't have to iterate through everytime
     private boolean isBrokerAvailableForRebalancing(String bundleName, long maxLoadLevel) {
-        NamespaceName namespaceName = new NamespaceName(LoadManagerShared.getNamespaceNameFromBundleName(bundleName));
+        NamespaceName namespaceName = NamespaceName.get(LoadManagerShared.getNamespaceNameFromBundleName(bundleName));
         Map<Long, Set<ResourceUnit>> availableBrokers = sortedRankings.get();
         // this does not have "http://" in front, hacky but no time to pretty up
         Multimap<Long, ResourceUnit> brokers = getFinalCandidates(namespaceName, availableBrokers);
@@ -1421,7 +1427,7 @@ public class SimpleLoadManagerImpl implements LoadManager, ZooKeeperCacheListene
                 if (stats.topics <= 1) {
                     log.info("Unable to split hot namespace bundle {} since there is only one topic.", bundleName);
                 } else {
-                    NamespaceName namespaceName = new NamespaceName(
+                    NamespaceName namespaceName = NamespaceName.get(
                             LoadManagerShared.getNamespaceNameFromBundleName(bundleName));
                     int numBundles = pulsar.getNamespaceService().getBundleCount(namespaceName);
                     if (numBundles >= maxBundleCount) {
@@ -1469,5 +1475,16 @@ public class SimpleLoadManagerImpl implements LoadManager, ZooKeeperCacheListene
         loadReportCacheZk.clear();
         availableActiveBrokers.close();
         scheduler.shutdown();
+    }
+    
+    private long getBrokerZnodeOwner() {
+        try {
+            Stat stat = new Stat();
+            pulsar.getZkClient().getData(brokerZnodePath, false, stat);
+            return stat.getEphemeralOwner();
+        } catch (Exception e) {
+            log.warn("Failed to get stat of {}", brokerZnodePath, e);
+        }
+        return 0;
     }
 }

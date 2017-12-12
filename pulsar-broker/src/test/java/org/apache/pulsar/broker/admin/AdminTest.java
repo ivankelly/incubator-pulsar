@@ -159,6 +159,7 @@ public class AdminTest extends MockedPulsarServiceBaseTest {
         doReturn(Sets.newTreeSet(Lists.newArrayList("use", "usw", "usc"))).when(persistentTopics).clusters();
         doNothing().when(persistentTopics).validateAdminAccessOnProperty("my-property");
         doNothing().when(persistentTopics).validateAdminAccessOnProperty("other-property");
+        doNothing().when(persistentTopics).validateAdminAccessOnProperty("prop-xyz");
 
         resourceQuotas = spy(new ResourceQuotas());
         resourceQuotas.setServletContext(new MockServletContext());
@@ -626,4 +627,12 @@ public class AdminTest extends MockedPulsarServiceBaseTest {
         assertTrue(permission.isEmpty());
     }
 
+    @Test
+    public void testRestExceptionMessage() {
+        String message = "my-message";
+        RestException exception = new RestException(Status.PRECONDITION_FAILED, message);
+        assertEquals(exception.getMessage(), message);
+
+    }
+    
 }

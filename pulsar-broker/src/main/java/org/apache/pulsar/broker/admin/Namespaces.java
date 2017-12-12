@@ -24,9 +24,11 @@ import static org.apache.pulsar.broker.cache.LocalZooKeeperCacheService.LOCAL_PO
 
 import java.net.URI;
 import java.net.URL;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -80,11 +82,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+import com.google.common.collect.Sets.SetView;
 
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
+
 import static org.apache.pulsar.broker.cache.ConfigurationCacheService.POLICIES;
 
 @Path("/namespaces")
@@ -248,7 +253,7 @@ public class Namespaces extends AdminResource {
             @PathParam("namespace") String namespace,
             @QueryParam("authoritative") @DefaultValue("false") boolean authoritative) {
 
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
 
         validateAdminAccessOnProperty(property);
         validatePoliciesReadOnlyAccess();
@@ -354,13 +359,14 @@ public class Namespaces extends AdminResource {
     public void deleteNamespaceBundle(@PathParam("property") String property, @PathParam("cluster") String cluster,
             @PathParam("namespace") String namespace, @PathParam("bundle") String bundleRange,
             @QueryParam("authoritative") @DefaultValue("false") boolean authoritative) {
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
 
         validateAdminAccessOnProperty(property);
         validatePoliciesReadOnlyAccess();
 
         // ensure that non-global namespace is directed to the correct cluster
         validateClusterOwnership(cluster);
+
         Policies policies = getNamespacePolicies(property, cluster, namespace);
         // ensure the local cluster is the only cluster for the global namespace configuration
         try {
@@ -537,34 +543,37 @@ public class Namespaces extends AdminResource {
     @ApiOperation(value = "Set the replication clusters for a namespace.")
     @ApiResponses(value = { @ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 404, message = "Property or cluster or namespace doesn't exist"),
+            @ApiResponse(code = 409, message = "Peer-cluster can't be part of replication-cluster"),
             @ApiResponse(code = 412, message = "Namespace is not global or invalid cluster ids") })
     public void setNamespaceReplicationClusters(@PathParam("property") String property,
             @PathParam("cluster") String cluster, @PathParam("namespace") String namespace, List<String> clusterIds) {
         validateAdminAccessOnProperty(property);
         validatePoliciesReadOnlyAccess();
 
+        Set<String> replicationClusterSet = Sets.newHashSet(clusterIds);
         if (!cluster.equals("global")) {
             throw new RestException(Status.PRECONDITION_FAILED, "Cannot set replication on a non-global namespace");
         }
 
-        if (clusterIds.contains("global")) {
+        if (replicationClusterSet.contains("global")) {
             throw new RestException(Status.PRECONDITION_FAILED,
                     "Cannot specify global in the list of replication clusters");
         }
 
         Set<String> clusters = clusters();
-        for (String clusterId : clusterIds) {
+        for (String clusterId : replicationClusterSet) {
             if (!clusters.contains(clusterId)) {
                 throw new RestException(Status.FORBIDDEN, "Invalid cluster id: " + clusterId);
             }
+            validatePeerClusterConflict(clusterId, replicationClusterSet);
         }
 
-        for (String clusterId : clusterIds) {
+        for (String clusterId : replicationClusterSet) {
             validateClusterForProperty(property, clusterId);
         }
 
         Entry<Policies, Stat> policiesNode = null;
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
 
         try {
             // Force to read the data s.t. the watch to the cache content is setup.
@@ -625,7 +634,7 @@ public class Namespaces extends AdminResource {
             throw new RestException(Status.PRECONDITION_FAILED, "Invalid value for message TTL");
         }
 
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
         Entry<Policies, Stat> policiesNode = null;
 
         try {
@@ -668,7 +677,7 @@ public class Namespaces extends AdminResource {
         validateAdminAccessOnProperty(property);
         validatePoliciesReadOnlyAccess();
 
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
         Entry<Policies, Stat> policiesNode = null;
 
         try {
@@ -777,10 +786,13 @@ public class Namespaces extends AdminResource {
         if (!cluster.equals(Namespaces.GLOBAL_CLUSTER)) {
             validateClusterOwnership(cluster);
             validateClusterForProperty(property, cluster);
+        } else {
+            // check cluster ownership for a given global namespace: redirect if peer-cluster owns it
+            validateGlobalNamespaceOwnership(NamespaceName.get(property, cluster, namespace));
         }
 
         Policies policies = getNamespacePolicies(property, cluster, namespace);
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
 
         List<String> boundaries = policies.bundles.getBoundaries();
         for (int i = 0; i < boundaries.size() - 1; i++) {
@@ -813,9 +825,12 @@ public class Namespaces extends AdminResource {
         if (!cluster.equals(Namespaces.GLOBAL_CLUSTER)) {
             validateClusterOwnership(cluster);
             validateClusterForProperty(property, cluster);
+        } else {
+            // check cluster ownership for a given global namespace: redirect if peer-cluster owns it
+            validateGlobalNamespaceOwnership(NamespaceName.get(property, cluster, namespace));
         }
 
-        NamespaceName fqnn = new NamespaceName(property, cluster, namespace);
+        NamespaceName fqnn = NamespaceName.get(property, cluster, namespace);
         validatePoliciesReadOnlyAccess();
 
         if (!isBundleOwnedByAnyBroker(fqnn, policies.bundles, bundleRange)) {
@@ -851,9 +866,12 @@ public class Namespaces extends AdminResource {
         if (!cluster.equals(Namespaces.GLOBAL_CLUSTER)) {
             validateClusterOwnership(cluster);
             validateClusterForProperty(property, cluster);
+        } else {
+            // check cluster ownership for a given global namespace: redirect if peer-cluster owns it
+            validateGlobalNamespaceOwnership(NamespaceName.get(property, cluster, namespace));
         }
 
-        NamespaceName fqnn = new NamespaceName(property, cluster, namespace);
+        NamespaceName fqnn = NamespaceName.get(property, cluster, namespace);
         validatePoliciesReadOnlyAccess();
         NamespaceBundle nsBundle = validateNamespaceBundleOwnership(fqnn, policies.bundles, bundleRange, authoritative,
                 true);
@@ -882,7 +900,7 @@ public class Namespaces extends AdminResource {
         validateSuperUserAccess();
 
         Entry<Policies, Stat> policiesNode = null;
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
 
         try {
             final String path = path(POLICIES, property, cluster, namespace);
@@ -1213,7 +1231,7 @@ public class Namespaces extends AdminResource {
             @QueryParam("authoritative") @DefaultValue("false") boolean authoritative) {
         validateAdminAccessOnProperty(property);
 
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
         try {
             NamespaceBundles bundles = pulsar().getNamespaceService().getNamespaceBundleFactory().getBundles(nsName);
             Exception exception = null;
@@ -1264,9 +1282,12 @@ public class Namespaces extends AdminResource {
         if (!cluster.equals(Namespaces.GLOBAL_CLUSTER)) {
             validateClusterOwnership(cluster);
             validateClusterForProperty(property, cluster);
+        } else {
+            // check cluster ownership  for a given global namespace: redirect if peer-cluster owns it
+            validateGlobalNamespaceOwnership(NamespaceName.get(property, cluster, namespace));
         }
 
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
         validateNamespaceBundleOwnership(nsName, policies.bundles, bundleRange, authoritative, true);
 
         clearBacklog(nsName, bundleRange, null);
@@ -1285,7 +1306,7 @@ public class Namespaces extends AdminResource {
             @QueryParam("authoritative") @DefaultValue("false") boolean authoritative) {
         validateAdminAccessOnProperty(property);
 
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
         try {
             NamespaceBundles bundles = pulsar().getNamespaceService().getNamespaceBundleFactory().getBundles(nsName);
             Exception exception = null;
@@ -1336,9 +1357,12 @@ public class Namespaces extends AdminResource {
         if (!cluster.equals(Namespaces.GLOBAL_CLUSTER)) {
             validateClusterOwnership(cluster);
             validateClusterForProperty(property, cluster);
+        } else {
+            // check cluster ownership  for a given global namespace: redirect if peer-cluster owns it
+            validateGlobalNamespaceOwnership(NamespaceName.get(property, cluster, namespace));
         }
 
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
         validateNamespaceBundleOwnership(nsName, policies.bundles, bundleRange, authoritative, true);
 
         clearBacklog(nsName, bundleRange, subscription);
@@ -1356,7 +1380,7 @@ public class Namespaces extends AdminResource {
             @QueryParam("authoritative") @DefaultValue("false") boolean authoritative) {
         validateAdminAccessOnProperty(property);
 
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
         try {
             NamespaceBundles bundles = pulsar().getNamespaceService().getNamespaceBundleFactory().getBundles(nsName);
             Exception exception = null;
@@ -1406,9 +1430,12 @@ public class Namespaces extends AdminResource {
         if (!cluster.equals(Namespaces.GLOBAL_CLUSTER)) {
             validateClusterOwnership(cluster);
             validateClusterForProperty(property, cluster);
+        } else {
+            // check cluster ownership for a given global namespace: redirect if peer-cluster owns it
+            validateGlobalNamespaceOwnership(NamespaceName.get(property, cluster, namespace));
         }
 
-        NamespaceName nsName = new NamespaceName(property, cluster, namespace);
+        NamespaceName nsName = NamespaceName.get(property, cluster, namespace);
         validateNamespaceBundleOwnership(nsName, policies.bundles, bundleRange, authoritative, true);
 
         unsubscribe(nsName, bundleRange, subscription);
@@ -1476,5 +1503,35 @@ public class Namespaces extends AdminResource {
         }
     }
 
+    /**
+     * It validates that peer-clusters can't coexist in replication-clusters
+     * 
+     * @param clusterName:
+     *            given cluster whose peer-clusters can't be present into replication-cluster list
+     * @param clusters:
+     *            replication-cluster list
+     */
+    private void validatePeerClusterConflict(String clusterName, Set<String> replicationClusters) {
+        try {
+            ClusterData clusterData = clustersCache().get(path("clusters", clusterName)).orElseThrow(
+                    () -> new RestException(Status.PRECONDITION_FAILED, "Invalid replication cluster " + clusterName));
+            Set<String> peerClusters = clusterData.getPeerClusterNames();
+            if (peerClusters != null && !peerClusters.isEmpty()) {
+                SetView<String> conflictPeerClusters = Sets.intersection(peerClusters, replicationClusters);
+                if (!conflictPeerClusters.isEmpty()) {
+                    log.warn("[{}] {}'s peer cluster can't be part of replication clusters {}", clientAppId(),
+                            clusterName, conflictPeerClusters);
+                    throw new RestException(Status.CONFLICT,
+                            String.format("%s's peer-clusters %s can't be part of replication-clusters %s", clusterName,
+                                    conflictPeerClusters, replicationClusters));
+                }
+            }
+        } catch (RestException re) {
+            throw re;
+        } catch (Exception e) {
+            log.warn("[{}] Failed to get cluster-data for {}", clientAppId(), clusterName, e);
+        }
+    }
+    
     private static final Logger log = LoggerFactory.getLogger(Namespaces.class);
 }
