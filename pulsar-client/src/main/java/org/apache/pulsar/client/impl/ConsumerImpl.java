@@ -972,7 +972,7 @@ public class ConsumerImpl extends ConsumerBase {
         }
     }
 
-    private void increaseAvailablePermits(ClientCnx currentCnx) {
+    void increaseAvailablePermits(ClientCnx currentCnx) {
         increaseAvailablePermits(currentCnx, 1);
     }
 

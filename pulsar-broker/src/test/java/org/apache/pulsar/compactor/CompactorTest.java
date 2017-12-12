@@ -25,6 +25,7 @@ import io.netty.buffer.ByteBuf;
 import java.util.HashMap;
 import java.util.Enumeration;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.bookkeeper.client.BookKeeper;
@@ -120,5 +121,41 @@ public class CompactorTest extends MockedPulsarServiceBaseTest {
         log.info("expected {}", expected);
         Assert.assertTrue(expected.isEmpty(),
                           "All expected keys should have been received");
+    }
+
+    @Test
+    public void testRawConsumer() throws Exception {
+        final long numKeys = 10L;
+
+        String topic = "persistent://my-property/use/my-ns/my-raw-topic";
+
+        ProducerConfiguration producerConf = new ProducerConfiguration();
+        Producer producer = pulsarClient.createProducer(topic, producerConf);
+
+        // add messages to topic, keeping latest for each key
+        Map<String, byte[]> expected = new HashMap<>();
+        for (int i = 0; i < numKeys; i++) {
+            String key = "key"+i;
+            byte[] data = ("my-message-" + i).getBytes();
+            producer.send(MessageBuilder.create()
+                          .setKey(key)
+                          .setContent(data).build());
+        }
+
+        RawReader reader = RawReader.create(pulsarClient, topic).get();
+        reader.seekAsync(MessageId.earliest).get();
+
+        int messagesRead = 0;
+        try {
+            while (true) { // should break out with TimeoutException
+                try (RawMessage m = reader.readNextAsync().get(1, TimeUnit.SECONDS)) {
+                    messagesRead++;
+                }
+            }
+        } catch (TimeoutException te) {
+            // ok
+        }
+
+        Assert.assertEquals(messagesRead, numKeys);
     }
 }
