@@ -83,7 +83,9 @@ public class RawMessageImpl implements RawMessage {
         }
         headers.writeInt(headersAndPayload.readableBytes());
 
-        return ByteBufPair.get(headers, headersAndPayload);
+        ByteBufPair ret = ByteBufPair.get(headers, headersAndPayload);
+        headers.release(); // the pair will have retained
+        return ret;
     }
 
     static public RawMessage deserializeFrom(ByteBuf buffer) {
