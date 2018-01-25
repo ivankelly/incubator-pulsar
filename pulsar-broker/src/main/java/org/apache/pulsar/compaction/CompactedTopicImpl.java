@@ -19,17 +19,29 @@
 package org.apache.pulsar.compaction;
 
 import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.ComparisonChain;
 
+import io.netty.buffer.ByteBuf;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
+import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.LedgerHandle;
 import org.apache.bookkeeper.client.LedgerEntry;
+import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
+import org.apache.bookkeeper.mledger.impl.EntryImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
+
 import org.apache.bookkeeper.util.collections.ConcurrentLongLongPairHashMap.LongPair;
 import org.apache.pulsar.client.api.RawMessage;
 import org.apache.pulsar.client.impl.RawMessageImpl;
@@ -41,9 +53,67 @@ import org.slf4j.LoggerFactory;
 
 public class CompactedTopicImpl implements CompactedTopic {
     final static long NEWER_THAN_COMPACTED = -0xfeed0fbaL;
+    final static int DEFAULT_STARTPOINT_CACHE_SIZE = 100;
+
+    private final BookKeeper bk;
+    private final Cache<LongPair,MessageIdData> startPointCache = CacheBuilder.newBuilder()
+        .maximumSize(DEFAULT_STARTPOINT_CACHE_SIZE).build();
+
+    private PositionImpl compactionHorizon = null;
+    private CompletableFuture<LedgerHandle> compactedTopicLedger = null;
+
+    public CompactedTopicImpl(BookKeeper bk) {
+        this.bk = bk;
+    }
 
     @Override
-    public void newCompactedLedger(Position p, long compactedLedgerId) {}
+    public void newCompactedLedger(Position p, long compactedLedgerId) {
+        synchronized (this) {
+            compactionHorizon = (PositionImpl)p;
+            compactedTopicLedger = openCompactedLedger(bk, compactedLedgerId);
+        }
+    }
+
+    @Override
+    public void asyncReadEntriesOrWait(ManagedCursor cursor, int numberOfEntriesToRead,
+                                       ReadEntriesCallback callback, Object ctx) {
+        synchronized (this) {
+            PositionImpl cursorPosition = (PositionImpl) cursor.getReadPosition();
+            if (compactionHorizon == null
+                || compactionHorizon.compareTo(cursorPosition) < 0) {
+                cursor.asyncReadEntriesOrWait(numberOfEntriesToRead, callback, ctx);
+            } else {
+                compactedTopicLedger.whenComplete(
+                        (ledger, exception) -> {
+                            if (exception != null) {
+                                callback.readEntriesFailed(new ManagedLedgerException(exception), ctx);
+                            } else {
+                                findStartPoint(ledger, cursorPosition, startPointCache)
+                                    .whenComplete((startPoint, exception2) -> {
+                                            if (exception2 != null) {
+                                                callback.readEntriesFailed(new ManagedLedgerException(exception2), ctx);
+                                            } else if (startPoint == NEWER_THAN_COMPACTED) {
+                                                cursor.asyncReadEntriesOrWait(numberOfEntriesToRead, callback, ctx);
+                                            } else {
+                                                long endPoint = Math.min(ledger.getLastAddConfirmed(),
+                                                                         startPoint + numberOfEntriesToRead);
+                                                readEntries(ledger, startPoint, endPoint)
+                                                    .whenComplete((entries, exception3) -> {
+                                                        if (exception3 != null) {
+                                                            callback.readEntriesFailed(new ManagedLedgerException(exception3), ctx);
+                                                        } else {
+                                                            Entry lastEntry = entries.get(entries.size() - 1);
+                                                            cursor.seek(lastEntry.getPosition().getNext());
+                                                            callback.readEntriesComplete(entries, ctx);
+                                                        }
+                                                    });
+                                            }
+                                        });
+                            }
+                        });
+            }
+        }
+    }
 
     static CompletableFuture<Long> findStartPoint(LedgerHandle lh, PositionImpl p,
                                                   Cache<LongPair,MessageIdData> cache) {
@@ -84,6 +154,49 @@ public class CompactedTopicImpl implements CompactedTopic {
                         // shouldn't happen, allOf should have given us the exception
                         promise.completeExceptionally(e);
                     }
+                });
+    }
+
+    private static CompletableFuture<LedgerHandle> openCompactedLedger(BookKeeper bk, long id) {
+        CompletableFuture<LedgerHandle> promise = new CompletableFuture<>();
+        bk.asyncOpenLedger(id,
+                           Compactor.COMPACTED_TOPIC_LEDGER_DIGEST_TYPE,
+                           Compactor.COMPACTED_TOPIC_LEDGER_PASSWORD,
+                           (rc, ledger, ctx) -> {
+                               if (rc != BKException.Code.OK) {
+                                   promise.completeExceptionally(BKException.create(rc));
+                               } else {
+                                   promise.complete(ledger);
+                               }
+                           }, null);
+        return promise;
+    }
+
+    private static CompletableFuture<List<Entry>> readEntries(LedgerHandle lh, long from, long to) {
+        CompletableFuture<Enumeration<LedgerEntry>> promise = new CompletableFuture<>();
+
+        lh.asyncReadEntries(from, to,
+                            (rc, _lh, seq, ctx) -> {
+                                if (rc != BKException.Code.OK) {
+                                    promise.completeExceptionally(BKException.create(rc));
+                                } else {
+                                    promise.complete(seq);
+                                }
+                            }, null);
+        return promise.thenApply(
+                (seq) -> {
+                    List<Entry> entries = new ArrayList<Entry>();
+                    while (seq.hasMoreElements()) {
+                        ByteBuf buf = seq.nextElement().getEntryBuffer();
+                        try (RawMessage m = RawMessageImpl.deserializeFrom(buf)) {
+                            entries.add(EntryImpl.create(m.getMessageIdData().getLedgerId(),
+                                                         m.getMessageIdData().getEntryId(),
+                                                         m.getHeadersAndPayload()));
+                        } finally {
+                            buf.release();
+                        }
+                    }
+                    return entries;
                 });
     }
 
