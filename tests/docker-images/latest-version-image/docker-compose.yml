@@ -1,0 +1,108 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+#
+version: '2.1'
+networks:
+  pulsar:
+    driver: bridge
+
+services:
+  eu-zk:
+    hostname: eu-zk
+    image: apachepulsar/pulsar-test-latest-version:latest
+    command: bin/run-local-zk.sh
+    environment:
+      ZOOKEEPER_SERVERS: eu-zk
+    networks:
+      pulsar:
+
+  eu-gzk:
+    hostname: eu-gzk
+    image: apachepulsar/pulsar-test-latest-version:latest
+    command: bin/run-global-zk.sh
+    environment:
+      ZOOKEEPER_SERVERS: eu-gzk
+    networks:
+      pulsar:
+
+  eu-init:
+    image: apachepulsar/pulsar-test-latest-version:latest
+    command: bin/init-cluster.sh
+    environment:
+      cluster: eu
+      zkServers: eu-zk
+      globalZkServers: eu-gzk:2184
+      pulsarNode: eu-pulsar1
+    networks:
+      pulsar:
+
+  eu-bk1:
+    hostname: eu-bk1
+    image: apachepulsar/pulsar-test-latest-version:latest
+    command: bin/run-bookie.sh
+    environment:
+      zkServers: eu-zk
+      useHostNameAsBookieID: 'true'
+    networks:
+      pulsar:
+
+  eu-bk2:
+    hostname: eu-bk2
+    image: apachepulsar/pulsar-test-latest-version:latest
+    command: bin/run-bookie.sh
+    environment:
+      zkServers: eu-zk
+      useHostNameAsBookieID: 'true'
+    networks:
+      pulsar:
+
+  eu-bk3:
+    hostname: eu-bk3
+    image: apachepulsar/pulsar-test-latest-version:latest
+    command: bin/run-bookie.sh
+    environment:
+      zkServers: eu-zk
+      useHostNameAsBookieID: 'true'
+    networks:
+      pulsar:
+
+  eu-pulsar1:
+    hostname: eu-pulsar1
+    image: apachepulsar/pulsar-test-latest-version:latest
+    command: bin/run-broker.sh
+    environment:
+      zookeeperServers: eu-zk
+      globalZookeeperServers: eu-gzk:2184
+      clusterName: eu
+      NO_AUTOSTART: 'true'
+    networks:
+      pulsar:
+
+  eu-pulsar2:
+    hostname: eu-pulsar2
+    image: apachepulsar/pulsar-test-latest-version:latest
+    command: bin/run-broker.sh
+    environment:
+      zookeeperServers: eu-zk
+      globalZookeeperServers: eu-gzk:2184
+      clusterName: eu
+      NO_AUTOSTART: 'true'
+    networks:
+      pulsar:
+
+
