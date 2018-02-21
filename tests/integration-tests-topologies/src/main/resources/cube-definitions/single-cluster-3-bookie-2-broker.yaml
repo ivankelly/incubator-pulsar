@@ -1,0 +1,60 @@
+#/**
+# * Licensed to the Apache Software Foundation (ASF) under one
+# * or more contributor license agreements.  See the NOTICE file
+# * distributed with this work for additional information
+# * regarding copyright ownership.  The ASF licenses this file
+# * to you under the Apache License, Version 2.0 (the
+# * "License"); you may not use this file except in compliance
+# * with the License.  You may obtain a copy of the License at
+# *
+# *     http://www.apache.org/licenses/LICENSE-2.0
+# *
+# * Unless required by applicable law or agreed to in writing, software
+# * distributed under the License is distributed on an "AS IS" BASIS,
+# * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# * See the License for the specific language governing permissions and
+# * limitations under the License.
+# */
+networks:
+  pulsarnet*:
+    driver: bridge
+
+zookeeper*:
+  image: apachepulsar/pulsar-test-latest-version:latest
+  await:
+    strategy: org.apache.bookkeeper.tests.NoopAwaitStrategy
+  env: [ZOOKEEPER_SERVERS=eu-zk]
+  entryPoint: [bin/run-local-zk.sh]
+  aliases:
+    - zookeeper
+  beforeStop:
+    - customBeforeStopAction:
+        strategy: org.apache.bookkeeper.tests.PulsarLogsToTargetDirStopAction
+  networkMode: pulsarnet*
+
+global-zookeeper*:
+  image: apachepulsar/pulsar-test-latest-version:latest
+  await:
+    strategy: org.apache.bookkeeper.tests.NoopAwaitStrategy
+  env: [ZOOKEEPER_SERVERS=eu-zk]
+  entryPoint: [bin/run-global-zk.sh]
+  aliases:
+    - global-zookeeper
+  beforeStop:
+    - customBeforeStopAction:
+        strategy: org.apache.bookkeeper.tests.PulsarLogsToTargetDirStopAction
+  networkMode: pulsarnet*
+
+init*:
+  image: apachepulsar/pulsar-test-latest-version:latest
+  await:
+    strategy: org.apache.bookkeeper.tests.NoopAwaitStrategy
+  env: [cluster=test, zkServers=zookeeper, globalZkServers=global-zookeeper:2184, pulsarNode=pulsar-broker1]
+  entryPoint: [bin/init-cluster.sh]
+  beforeStop:
+    - customBeforeStopAction:
+        strategy: org.apache.bookkeeper.tests.LogToTargetDirStopAction
+  networkMode: pulsarnet*
+
+
+
