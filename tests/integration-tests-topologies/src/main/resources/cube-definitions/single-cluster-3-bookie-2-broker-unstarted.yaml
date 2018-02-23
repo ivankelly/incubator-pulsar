@@ -23,9 +23,10 @@ zookeeper*:
   image: apachepulsar/pulsar-test-latest-version:latest
   await:
     strategy: org.apache.pulsar.tests.NoopAwaitStrategy
-  env: [ZOOKEEPER_SERVERS=eu-zk]
+  env: [ZOOKEEPER_SERVERS=zookeeper]
   labels:
     cluster: test
+    service: zookeeper
   entryPoint: [bin/run-local-zk.sh]
   aliases:
     - zookeeper
@@ -38,9 +39,10 @@ global-zookeeper*:
   image: apachepulsar/pulsar-test-latest-version:latest
   await:
     strategy: org.apache.pulsar.tests.NoopAwaitStrategy
-  env: [ZOOKEEPER_SERVERS=eu-zk]
+  env: [ZOOKEEPER_SERVERS=zookeeper]
   labels:
     cluster: test
+    service: global-zookeeper
   entryPoint: [bin/run-global-zk.sh]
   aliases:
     - global-zookeeper
@@ -58,6 +60,9 @@ init*:
     - zkServers=zookeeper
     - globalZkServers=global-zookeeper:2184
     - pulsarNode=pulsar-broker1
+  labels:
+    cluster: test
+    service: init
   entryPoint: [bin/init-cluster.sh]
   beforeStop:
     - customBeforeStopAction:
@@ -71,6 +76,9 @@ bookkeeper1*:
   env:
     - zkServers=zookeeper
     - useHostNameAsBookieID=true
+  labels:
+    cluster: test
+    service: bookie
   entryPoint: [bin/run-bookie.sh]
   beforeStop:
     - customBeforeStopAction:
@@ -84,6 +92,9 @@ bookkeeper2*:
   env:
     - zkServers=zookeeper
     - useHostNameAsBookieID=true
+  labels:
+    cluster: test
+    service: bookie
   entryPoint: [bin/run-bookie.sh]
   beforeStop:
     - customBeforeStopAction:
@@ -97,6 +108,9 @@ bookkeeper3*:
   env:
     - zkServers=zookeeper
     - useHostNameAsBookieID=true
+  labels:
+    cluster: test
+    service: bookie
   entryPoint: [bin/run-bookie.sh]
   beforeStop:
     - customBeforeStopAction:
@@ -113,8 +127,10 @@ pulsar-broker1*:
     - zookeeperServers=zookeeper
     - globalZookeeperServers=global-zookeeper:2184
     - clusterName=test
+    - NO_AUTOSTART=true
   labels:
     cluster: test
+    service: pulsar-broker
   entryPoint: [bin/run-broker.sh]
   beforeStop:
     - customBeforeStopAction:
@@ -131,15 +147,35 @@ pulsar-broker2*:
     - zookeeperServers=zookeeper
     - globalZookeeperServers=global-zookeeper:2184
     - clusterName=test
+    - NO_AUTOSTART=true
   labels:
     cluster: test
+    service: pulsar-broker
   entryPoint: [bin/run-broker.sh]
   beforeStop:
     - customBeforeStopAction:
         strategy: org.apache.pulsar.tests.PulsarLogsToTargetDirStopAction
   networkMode: pulsarnet*
 
-
-
+pulsar-proxy*:
+  image: apachepulsar/pulsar-test-latest-version:latest
+  await:
+    strategy: org.apache.pulsar.tests.NoopAwaitStrategy
+  aliases:
+    - pulsar-broker2
+  env:
+    - zookeeperServers=zookeeper
+    - globalZookeeperServers=global-zookeeper:2184
+    - clusterName=test
+    - NO_AUTOSTART=true
+  labels:
+    cluster: test
+    service: pulsar-proxy
+  entryPoint: [bin/run-proxy.sh]
+  beforeStop:
+    - customBeforeStopAction:
+        strategy: org.apache.pulsar.tests.PulsarLogsToTargetDirStopAction
+  networkMode: pulsarnet*
+  
 
 

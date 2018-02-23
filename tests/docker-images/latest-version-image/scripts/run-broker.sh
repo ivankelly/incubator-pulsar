@@ -23,9 +23,8 @@ bin/apply-config-from-env.py conf/broker.conf && \
 
 if [ -z "$NO_AUTOSTART" ]; then
     sed -i 's/autostart=.*/autostart=true/' /etc/supervisord/conf.d/broker.conf
-
-    bin/watch-znode.py -z $zookeeperServers -p /initialized -w
 fi
 
+bin/watch-znode.py -z $zookeeperServers -p /initialized -w
 exec /usr/bin/supervisord -c /etc/supervisord.conf
 

@@ -33,6 +33,7 @@ COPY conf/global-zk.conf /etc/supervisord/conf.d/global-zk.conf
 COPY conf/local-zk.conf /etc/supervisord/conf.d/local-zk.conf
 COPY conf/bookie.conf /etc/supervisord/conf.d/bookie.conf
 COPY conf/broker.conf /etc/supervisord/conf.d/broker.conf
+COPY conf/proxy.conf /etc/supervisord/conf.d/proxy.conf
 
 COPY scripts/watch-znode.py /pulsar/bin
 COPY scripts/apply-config-from-env.py /pulsar/bin
@@ -42,6 +43,7 @@ COPY scripts/run-global-zk.sh /pulsar/bin
 COPY scripts/run-local-zk.sh /pulsar/bin
 COPY scripts/run-bookie.sh /pulsar/bin
 COPY scripts/run-broker.sh /pulsar/bin
+COPY scripts/run-proxy.sh /pulsar/bin
 
 WORKDIR /pulsar
 

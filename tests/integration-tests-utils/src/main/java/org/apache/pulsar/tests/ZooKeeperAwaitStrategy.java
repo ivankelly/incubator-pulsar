@@ -49,8 +49,8 @@ public class ZooKeeperAwaitStrategy implements AwaitStrategy {
                 new PingCommand() {
                     @Override
                     public boolean call() {
-                        return BookKeeperClusterUtils.zookeeperRunning(dockerClientExecutor.getDockerClient(),
-                                                                       cube.getId());
+                        return PulsarClusterUtils.zookeeperRunning(dockerClientExecutor.getDockerClient(),
+                                                                   cube.getId());
                     }
                 });
     }

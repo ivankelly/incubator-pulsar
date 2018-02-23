@@ -31,6 +31,7 @@ import java.io.InputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -119,7 +120,7 @@ public class DockerUtils {
                 entry = stream.getNextTarEntry();
             }
         } catch (RuntimeException|IOException e) {
-            LOG.error("Error reading bk logs from container {}", containerId, e);
+            LOG.error("Error reading logs from container {}", containerId, e);
         }
     }
 
@@ -131,11 +132,18 @@ public class DockerUtils {
         throw new IllegalArgumentException("Container " + containerId + " has no networks");
     }
 
-    public static void runCommand(DockerClient docker, String containerId, String... cmd) throws Exception {
+    public static String getContainerHostname(DockerClient docker, String containerId) {
+        return runCommand(docker, containerId, "hostname").trim();
+    }
+
+    public static String runCommand(DockerClient docker, String containerId, String... cmd) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        String execid = docker.execCreateCmd(containerId).withCmd(cmd).exec().getId();
+        String execid = docker.execCreateCmd(containerId).withCmd(cmd)
+            .withAttachStderr(true).withAttachStdout(true).exec().getId();
         String cmdString = Arrays.stream(cmd).collect(Collectors.joining(" "));
-        docker.execStartCmd(execid).withDetach(false).exec(new ResultCallback<Frame>() {
+        StringBuffer output = new StringBuffer();
+        docker.execStartCmd(execid).withDetach(false)
+            .exec(new ResultCallback<Frame>() {
                 @Override
                 public void close() {}
 
@@ -147,6 +155,7 @@ public class DockerUtils {
                 @Override
                 public void onNext(Frame object) {
                     LOG.info("DOCKER.exec({}:{}): {}", containerId, cmdString, object);
+                    output.append(new String(object.getPayload()));
                 }
 
                 @Override
@@ -160,28 +169,52 @@ public class DockerUtils {
                     future.complete(true);
                 }
             });
-        future.get();
+        future.join();
 
         InspectExecResponse resp = docker.inspectExecCmd(execid).exec();
         while (resp.isRunning()) {
-            Thread.sleep(200);
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(ie);
+            }
             resp = docker.inspectExecCmd(execid).exec();
         }
         int retCode = resp.getExitCode();
         if (retCode != 0) {
-            throw new Exception(
+            throw new RuntimeException(
                     String.format("cmd(%s) failed on %s with exitcode %d",
                                   cmdString, containerId, retCode));
+        } else {
+            LOG.info("DOCKER.exec({}:{}): completed with {}", containerId, cmdString, retCode);
         }
+        return output.toString();
     }
 
-    public static Set<String> cubeIdsMatching(String needle) {
+    public static Optional<String> getContainerCluster(DockerClient docker, String containerId) {
+        return Optional.ofNullable(docker.inspectContainerCmd(containerId)
+                                   .exec().getConfig().getLabels().get("cluster"));
+    }
+
+    public static Set<String> allCubeIds() {
         Pattern pattern = Pattern.compile("^arq.cube.docker.([^.]*).ip$");
         return System.getProperties().keySet().stream()
             .map(k -> pattern.matcher(k.toString()))
             .filter(m -> m.matches())
             .map(m -> m.group(1))
-            .filter(m -> m.contains(needle))
+            .collect(Collectors.toSet());
+    }
+
+    public static Set<String> cubeIdsWithLabels(DockerClient docker, Map<String,String> labels) {
+        return allCubeIds().stream()
+            .filter(id -> {
+                    Map<String,String> configuredLabels = docker.inspectContainerCmd(id).exec().getConfig().getLabels();
+                    return labels.entrySet().stream()
+                        .map(e -> configuredLabels.containsKey(e.getKey())
+                             && configuredLabels.get(e.getKey()).equals(e.getValue()))
+                        .reduce(true, (acc, res) -> acc && res);
+                })
             .collect(Collectors.toSet());
     }
 }
