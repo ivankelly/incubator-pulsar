@@ -54,6 +54,7 @@ import org.apache.pulsar.common.api.Commands;
 import org.apache.pulsar.common.api.proto.PulsarApi;
 import org.apache.pulsar.common.api.proto.PulsarApi.KeyValue;
 import org.apache.pulsar.common.api.proto.PulsarApi.SingleMessageMetadata;
+import org.apache.pulsar.common.compaction.CompactionStatus;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
@@ -715,6 +716,34 @@ public class PersistentTopicsImpl extends BaseResource implements PersistentTopi
         }
 
         return future;
+    }
+
+    @Override
+    public void triggerCompaction(String topic)
+            throws PulsarAdminException {
+        try {
+            TopicName ds = validateTopic(topic);
+            request(persistentTopics.path(ds.getNamespace())
+                           .path(ds.getEncodedLocalName())
+                           .path("compaction"))
+                .put(Entity.entity("", MediaType.APPLICATION_JSON), ErrorData.class);
+        } catch (Exception e) {
+            throw getApiException(e);
+        }
+    }
+
+    @Override
+    public CompactionStatus compactionStatus(String topic)
+            throws PulsarAdminException {
+        try {
+            TopicName ds = validateTopic(topic);
+            return request(persistentTopics.path(ds.getNamespace())
+                           .path(ds.getEncodedLocalName())
+                           .path("compaction"))
+                .get(CompactionStatus.class);
+        } catch (Exception e) {
+            throw getApiException(e);
+        }
     }
 
     /*

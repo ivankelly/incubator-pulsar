@@ -30,6 +30,7 @@ import org.apache.pulsar.client.admin.PulsarAdminException.NotFoundException;
 import org.apache.pulsar.client.admin.PulsarAdminException.PreconditionFailedException;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.common.compaction.CompactionStatus;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.PartitionedTopicStats;
@@ -900,4 +901,8 @@ public interface PersistentTopics {
      *            reset subscription to messageId (or previous nearest messageId if given messageId is not valid)
      */
     CompletableFuture<Void> resetCursorAsync(String topic, String subName, MessageId messageId);
+
+    void triggerCompaction(String topic) throws PulsarAdminException;
+
+    CompactionStatus compactionStatus(String topic) throws PulsarAdminException;
 }
