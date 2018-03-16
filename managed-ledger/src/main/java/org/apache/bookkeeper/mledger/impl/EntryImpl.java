@@ -52,6 +52,16 @@ public final class EntryImpl extends AbstractReferenceCounted implements Entry, 
         return entry;
     }
 
+    public static EntryImpl create(org.apache.bookkeeper.client.api.LedgerEntry ledgerEntry) {
+        EntryImpl entry = RECYCLER.get();
+        entry.ledgerId = ledgerEntry.getLedgerId();
+        entry.entryId = ledgerEntry.getEntryId();
+        entry.data = ledgerEntry.getEntryBuffer();
+        entry.data.retain();
+        entry.setRefCnt(1);
+        return entry;
+    }
+
     // Used just for tests
     public static EntryImpl create(long ledgerId, long entryId, byte[] data) {
         EntryImpl entry = RECYCLER.get();

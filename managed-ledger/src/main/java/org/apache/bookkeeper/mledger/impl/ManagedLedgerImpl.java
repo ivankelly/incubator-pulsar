@@ -45,6 +45,8 @@ import org.apache.bookkeeper.client.AsyncCallback.OpenCallback;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.LedgerHandle;
+import org.apache.bookkeeper.client.api.DigestType;
+import org.apache.bookkeeper.client.api.ReadHandle;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.CloseCallback;
@@ -106,7 +108,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
     private ManagedLedgerConfig config;
     private final MetaStore store;
 
-    private final ConcurrentLongHashMap<CompletableFuture<LedgerHandle>> ledgerCache = new ConcurrentLongHashMap<>();
+    private final ConcurrentLongHashMap<CompletableFuture<ReadHandle>> ledgerCache = new ConcurrentLongHashMap<>();
     private final NavigableMap<Long, LedgerInfo> ledgers = new ConcurrentSkipListMap<>();
     private volatile Stat ledgersStat;
 
@@ -1293,52 +1295,50 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
         }
     }
 
-    CompletableFuture<LedgerHandle> getLedgerHandle(long ledgerId) {
-        CompletableFuture<LedgerHandle> ledgerHandle = ledgerCache.get(ledgerId);
+    CompletableFuture<ReadHandle> getLedgerHandle(long ledgerId) {
+        CompletableFuture<ReadHandle> ledgerHandle = ledgerCache.get(ledgerId);
         if (ledgerHandle != null) {
             return ledgerHandle;
         }
 
         // If not present try again and create if necessary
         return ledgerCache.computeIfAbsent(ledgerId, lid -> {
-            // Open the ledger for reading if it was not already opened
-            CompletableFuture<LedgerHandle> future = new CompletableFuture<>();
+                // Open the ledger for reading if it was not already opened
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Asynchronously opening ledger {} for read", name, ledgerId);
+                }
+                mbean.startDataLedgerOpenOp();
 
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Asynchronously opening ledger {} for read", name, ledgerId);
-            }
-            mbean.startDataLedgerOpenOp();
-            bookKeeper.asyncOpenLedger(ledgerId, config.getDigestType(), config.getPassword(),
-                    (int rc, LedgerHandle lh, Object ctx) -> {
-                        executor.submit(safeRun(() -> {
-                            mbean.endDataLedgerOpenOp();
-                            if (rc != BKException.Code.OK) {
-                                // Remove the ledger future from cache to give chance to reopen it later
-                                ledgerCache.remove(ledgerId, future);
-                                future.completeExceptionally(createManagedLedgerException(rc));
-                            } else {
-                                if (log.isDebugEnabled()) {
-                                    log.debug("[{}] Successfully opened ledger {} for reading", name, lh.getId());
-                                }
-                                future.complete(lh);
+                CompletableFuture<ReadHandle> future = bookKeeper.newOpenLedgerOp()
+                    .withRecovery(true)
+                    .withLedgerId(ledgerId)
+                    .withDigestType(DigestType.valueOf(config.getDigestType().toString())) // don't submit
+                    .withPassword(config.getPassword()).execute();
+                future.whenCompleteAsync((res,ex) -> {
+                        mbean.endDataLedgerOpenOp();
+                        if (ex != null) {
+                            ledgerCache.remove(ledgerId, future);
+                        } else {
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}] Successfully opened ledger {} for reading", name, ledgerId);
                             }
-                        }));
-                    }, null);
-            return future;
-        });
+                        }
+                    });
+                return future;
+            });
     }
 
-    void invalidateLedgerHandle(LedgerHandle ledgerHandle, int rc) {
+    void invalidateLedgerHandle(ReadHandle ledgerHandle, Throwable t) {
         long ledgerId = ledgerHandle.getId();
         if (ledgerId != currentLedger.getId()) {
             // remove handle from ledger cache since we got a (read) error
             ledgerCache.remove(ledgerId);
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Removed ledger {} from cache (after read error: {})", name, ledgerId, rc);
+                log.debug("[{}] Removed ledger {} from cache (after read error)", name, ledgerId, t);
             }
         } else {
             if (log.isDebugEnabled()) {
-                log.debug("[{}] Ledger that encountered read error {} is current ledger", name, rc);
+                log.debug("[{}] Ledger that encountered read error is current ledger", name, t);
             }
         }
     }
@@ -1363,7 +1363,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
 
     }
 
-    private void internalReadFromLedger(LedgerHandle ledger, OpReadEntry opReadEntry) {
+    private void internalReadFromLedger(ReadHandle ledger, OpReadEntry opReadEntry) {
 
         // Perform the read
         long firstEntry = opReadEntry.readPosition.getEntryId();
@@ -2216,6 +2216,14 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
             return new NonRecoverableLedgerException(BKException.getMessage(bkErrorCode));
         } else {
             return new ManagedLedgerException(BKException.getMessage(bkErrorCode));
+        }
+    }
+
+    public static ManagedLedgerException createManagedLedgerException(Throwable t) {
+        if (t instanceof org.apache.bookkeeper.client.api.BKException) {
+            return createManagedLedgerException(((org.apache.bookkeeper.client.api.BKException)t).getCode());
+        } else {
+            return new ManagedLedgerException("Unknown exception");
         }
     }
 
