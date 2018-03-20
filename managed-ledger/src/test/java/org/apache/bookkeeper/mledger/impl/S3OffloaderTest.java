@@ -18,6 +18,7 @@
  */
 package org.apache.bookkeeper.mledger.impl;
 
+import java.util.Iterator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -25,6 +26,8 @@ import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.LedgerHandle;
 import org.apache.bookkeeper.client.api.DigestType;
 import org.apache.bookkeeper.client.api.ReadHandle;
+import org.apache.bookkeeper.client.api.LedgerEntries;
+import org.apache.bookkeeper.client.api.LedgerEntry;
 import org.apache.bookkeeper.test.MockedBookKeeperTestCase;
 
 import org.slf4j.Logger;
@@ -53,6 +56,26 @@ public class S3OffloaderTest extends MockedBookKeeperTestCase {
             .withLedgerId(lh.getId())
             .withDigestType(DigestType.CRC32)
             .withPassword("".getBytes()).execute().get();
-        offloader.offload(readHandle).get();
+        String name = offloader.offload(readHandle).get();
+
+        ReadHandle readBack = offloader.openOffloadedLedger(name).get();
+
+        Assert.assertEquals(readBack.getId(), readHandle.getId());
+        Assert.assertEquals(readBack.getLastAddConfirmed(), readHandle.getLastAddConfirmed());
+
+        try (LedgerEntries readEntries = readHandle.read(0, readHandle.getLastAddConfirmed()).get();
+             LedgerEntries readBackEntries = readBack.read(0, readBack.getLastAddConfirmed()).get()) {
+            Iterator<LedgerEntry> readIter = readEntries.iterator();
+            Iterator<LedgerEntry> readBackIter = readBackEntries.iterator();
+
+            while (readIter.hasNext()) {
+                Assert.assertTrue(readBackIter.hasNext());
+                LedgerEntry readEntry = readIter.next();
+                LedgerEntry readBackEntry = readBackIter.next();
+
+                Assert.assertEquals(readEntry.getEntryBuffer(), readBackEntry.getEntryBuffer());
+            }
+            Assert.assertFalse(readBackIter.hasNext());
+        }
     }
 }
