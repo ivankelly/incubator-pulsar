@@ -20,6 +20,9 @@ package org.apache.pulsar.tests.integration;
 import com.github.dockerjava.api.DockerClient;
 
 import java.net.URL;
+import java.io.File;
+import java.nio.file.Files;
+import java.util.Base64;
 
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
@@ -65,7 +68,13 @@ public class TestS3Offload extends Arquillian {
     @Test
     public void testPublishOffloadAndConsume() throws Exception {
         int entriesPerLedger = 10;
+
+        String credentials = Base64.getEncoder().encodeToString(
+                Files.readAllBytes(new File(System.getenv("HOME") + "/.aws/credentials").toPath()));
         for (String b : PulsarClusterUtils.brokerSet(docker, "test")) {
+            DockerUtils.runCommand(docker, b, "mkdir", "-p", "/root/.aws");
+            DockerUtils.runCommand(docker, b, "sh", "-c",
+                                   "echo " + credentials + " | base64 -d > /root/.aws/credentials");
             updateConf(docker, b, "/pulsar/conf/broker.conf",
                        "managedLedgerMaxEntriesPerLedger", String.valueOf(entriesPerLedger));
             updateConf(docker, b, "/pulsar/conf/broker.conf",
@@ -114,6 +123,9 @@ public class TestS3Offload extends Arquillian {
                 admin.persistentTopics().offloadToS3(topic);
             }
 
+            // give it time to finish, and delete ledgers
+            Thread.sleep(10000);
+
             // reboot broker to clear cache
             Assert.assertTrue(PulsarClusterUtils.stopAllBrokers(docker, clusterName));
             Assert.assertTrue(PulsarClusterUtils.startAllBrokers(docker, clusterName));
@@ -141,9 +153,5 @@ public class TestS3Offload extends Arquillian {
 
         PulsarClusterUtils.stopAllProxies(docker, clusterName);
         Assert.assertTrue(PulsarClusterUtils.stopAllBrokers(docker, clusterName));
-
-        java.io.File f = new java.io.File("/tmp/pause");
-        f.createNewFile();
-        while (f.exists()) { Thread.sleep(1000); }
     }
 }

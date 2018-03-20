@@ -45,6 +45,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.client.api.LedgerEntries;
@@ -57,6 +59,8 @@ import org.apache.bookkeeper.client.impl.LedgerEntriesImpl;
 import org.apache.bookkeeper.proto.DataFormats.LedgerMetadataFormat;
 
 class S3Offloader {
+    private static final Logger log = LoggerFactory.getLogger(S3Offloader.class);
+
     private final ExecutorService executor;
     private final AmazonS3 s3;
 

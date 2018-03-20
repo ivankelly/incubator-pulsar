@@ -72,6 +72,10 @@ public final class MLDataFormats {
       // optional int64 timestamp = 4;
       boolean hasTimestamp();
       long getTimestamp();
+      
+      // optional string offloadKey = 5;
+      boolean hasOffloadKey();
+      String getOffloadKey();
     }
     public static final class LedgerInfo extends
         com.google.protobuf.GeneratedMessage
@@ -142,11 +146,44 @@ public final class MLDataFormats {
         return timestamp_;
       }
       
+      // optional string offloadKey = 5;
+      public static final int OFFLOADKEY_FIELD_NUMBER = 5;
+      private java.lang.Object offloadKey_;
+      public boolean hasOffloadKey() {
+        return ((bitField0_ & 0x00000010) == 0x00000010);
+      }
+      public String getOffloadKey() {
+        java.lang.Object ref = offloadKey_;
+        if (ref instanceof String) {
+          return (String) ref;
+        } else {
+          com.google.protobuf.ByteString bs = 
+              (com.google.protobuf.ByteString) ref;
+          String s = bs.toStringUtf8();
+          if (com.google.protobuf.Internal.isValidUtf8(bs)) {
+            offloadKey_ = s;
+          }
+          return s;
+        }
+      }
+      private com.google.protobuf.ByteString getOffloadKeyBytes() {
+        java.lang.Object ref = offloadKey_;
+        if (ref instanceof String) {
+          com.google.protobuf.ByteString b = 
+              com.google.protobuf.ByteString.copyFromUtf8((String) ref);
+          offloadKey_ = b;
+          return b;
+        } else {
+          return (com.google.protobuf.ByteString) ref;
+        }
+      }
+      
       private void initFields() {
         ledgerId_ = 0L;
         entries_ = 0L;
         size_ = 0L;
         timestamp_ = 0L;
+        offloadKey_ = "";
       }
       private byte memoizedIsInitialized = -1;
       public final boolean isInitialized() {
@@ -176,6 +213,9 @@ public final class MLDataFormats {
         if (((bitField0_ & 0x00000008) == 0x00000008)) {
           output.writeInt64(4, timestamp_);
         }
+        if (((bitField0_ & 0x00000010) == 0x00000010)) {
+          output.writeBytes(5, getOffloadKeyBytes());
+        }
         getUnknownFields().writeTo(output);
       }
       
@@ -200,6 +240,10 @@ public final class MLDataFormats {
         if (((bitField0_ & 0x00000008) == 0x00000008)) {
           size += com.google.protobuf.CodedOutputStream
             .computeInt64Size(4, timestamp_);
+        }
+        if (((bitField0_ & 0x00000010) == 0x00000010)) {
+          size += com.google.protobuf.CodedOutputStream
+            .computeBytesSize(5, getOffloadKeyBytes());
         }
         size += getUnknownFields().getSerializedSize();
         memoizedSerializedSize = size;
@@ -333,6 +377,8 @@ public final class MLDataFormats {
           bitField0_ = (bitField0_ & ~0x00000004);
           timestamp_ = 0L;
           bitField0_ = (bitField0_ & ~0x00000008);
+          offloadKey_ = "";
+          bitField0_ = (bitField0_ & ~0x00000010);
           return this;
         }
         
@@ -387,6 +433,10 @@ public final class MLDataFormats {
             to_bitField0_ |= 0x00000008;
           }
           result.timestamp_ = timestamp_;
+          if (((from_bitField0_ & 0x00000010) == 0x00000010)) {
+            to_bitField0_ |= 0x00000010;
+          }
+          result.offloadKey_ = offloadKey_;
           result.bitField0_ = to_bitField0_;
           onBuilt();
           return result;
@@ -414,6 +464,9 @@ public final class MLDataFormats {
           }
           if (other.hasTimestamp()) {
             setTimestamp(other.getTimestamp());
+          }
+          if (other.hasOffloadKey()) {
+            setOffloadKey(other.getOffloadKey());
           }
           this.mergeUnknownFields(other.getUnknownFields());
           return this;
@@ -468,6 +521,11 @@ public final class MLDataFormats {
               case 32: {
                 bitField0_ |= 0x00000008;
                 timestamp_ = input.readInt64();
+                break;
+              }
+              case 42: {
+                bitField0_ |= 0x00000010;
+                offloadKey_ = input.readBytes();
                 break;
               }
             }
@@ -558,6 +616,42 @@ public final class MLDataFormats {
           timestamp_ = 0L;
           onChanged();
           return this;
+        }
+        
+        // optional string offloadKey = 5;
+        private java.lang.Object offloadKey_ = "";
+        public boolean hasOffloadKey() {
+          return ((bitField0_ & 0x00000010) == 0x00000010);
+        }
+        public String getOffloadKey() {
+          java.lang.Object ref = offloadKey_;
+          if (!(ref instanceof String)) {
+            String s = ((com.google.protobuf.ByteString) ref).toStringUtf8();
+            offloadKey_ = s;
+            return s;
+          } else {
+            return (String) ref;
+          }
+        }
+        public Builder setOffloadKey(String value) {
+          if (value == null) {
+    throw new NullPointerException();
+  }
+  bitField0_ |= 0x00000010;
+          offloadKey_ = value;
+          onChanged();
+          return this;
+        }
+        public Builder clearOffloadKey() {
+          bitField0_ = (bitField0_ & ~0x00000010);
+          offloadKey_ = getDefaultInstance().getOffloadKey();
+          onChanged();
+          return this;
+        }
+        void setOffloadKey(com.google.protobuf.ByteString value) {
+          bitField0_ |= 0x00000010;
+          offloadKey_ = value;
+          onChanged();
         }
         
         // @@protoc_insertion_point(builder_scope:ManagedLedgerInfo.LedgerInfo)
@@ -4759,27 +4853,27 @@ public final class MLDataFormats {
       descriptor;
   static {
     java.lang.String[] descriptorData = {
-      "\n\"src/main/proto/MLDataFormats.proto\"\311\001\n" +
+      "\n\"src/main/proto/MLDataFormats.proto\"\335\001\n" +
       "\021ManagedLedgerInfo\0221\n\nledgerInfo\030\001 \003(\0132\035" +
       ".ManagedLedgerInfo.LedgerInfo\022/\n\022termina" +
-      "tedPosition\030\002 \001(\0132\023.NestedPositionInfo\032P" +
+      "tedPosition\030\002 \001(\0132\023.NestedPositionInfo\032d" +
       "\n\nLedgerInfo\022\020\n\010ledgerId\030\001 \002(\003\022\017\n\007entrie" +
       "s\030\002 \001(\003\022\014\n\004size\030\003 \001(\003\022\021\n\ttimestamp\030\004 \001(\003" +
-      "\"\206\001\n\014PositionInfo\022\020\n\010ledgerId\030\001 \002(\003\022\017\n\007e" +
-      "ntryId\030\002 \002(\003\0220\n\031individualDeletedMessage" +
-      "s\030\003 \003(\0132\r.MessageRange\022!\n\nproperties\030\004 \003" +
-      "(\0132\r.LongProperty\"7\n\022NestedPositionInfo\022",
-      "\020\n\010ledgerId\030\001 \002(\003\022\017\n\007entryId\030\002 \002(\003\"f\n\014Me" +
-      "ssageRange\022*\n\rlowerEndpoint\030\001 \002(\0132\023.Nest" +
-      "edPositionInfo\022*\n\rupperEndpoint\030\002 \002(\0132\023." +
-      "NestedPositionInfo\"+\n\014LongProperty\022\014\n\004na" +
-      "me\030\001 \002(\t\022\r\n\005value\030\002 \002(\003\"\270\001\n\021ManagedCurso" +
-      "rInfo\022\027\n\017cursorsLedgerId\030\001 \002(\003\022\032\n\022markDe" +
-      "leteLedgerId\030\002 \001(\003\022\031\n\021markDeleteEntryId\030" +
-      "\003 \001(\003\0220\n\031individualDeletedMessages\030\004 \003(\013" +
-      "2\r.MessageRange\022!\n\nproperties\030\005 \003(\0132\r.Lo" +
-      "ngPropertyB\'\n#org.apache.bookkeeper.mled",
-      "ger.protoH\001"
+      "\022\022\n\noffloadKey\030\005 \001(\t\"\206\001\n\014PositionInfo\022\020\n" +
+      "\010ledgerId\030\001 \002(\003\022\017\n\007entryId\030\002 \002(\003\0220\n\031indi" +
+      "vidualDeletedMessages\030\003 \003(\0132\r.MessageRan" +
+      "ge\022!\n\nproperties\030\004 \003(\0132\r.LongProperty\"7\n",
+      "\022NestedPositionInfo\022\020\n\010ledgerId\030\001 \002(\003\022\017\n" +
+      "\007entryId\030\002 \002(\003\"f\n\014MessageRange\022*\n\rlowerE" +
+      "ndpoint\030\001 \002(\0132\023.NestedPositionInfo\022*\n\rup" +
+      "perEndpoint\030\002 \002(\0132\023.NestedPositionInfo\"+" +
+      "\n\014LongProperty\022\014\n\004name\030\001 \002(\t\022\r\n\005value\030\002 " +
+      "\002(\003\"\270\001\n\021ManagedCursorInfo\022\027\n\017cursorsLedg" +
+      "erId\030\001 \002(\003\022\032\n\022markDeleteLedgerId\030\002 \001(\003\022\031" +
+      "\n\021markDeleteEntryId\030\003 \001(\003\0220\n\031individualD" +
+      "eletedMessages\030\004 \003(\0132\r.MessageRange\022!\n\np" +
+      "roperties\030\005 \003(\0132\r.LongPropertyB\'\n#org.ap",
+      "ache.bookkeeper.mledger.protoH\001"
     };
     com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner =
       new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {
@@ -4799,7 +4893,7 @@ public final class MLDataFormats {
           internal_static_ManagedLedgerInfo_LedgerInfo_fieldAccessorTable = new
             com.google.protobuf.GeneratedMessage.FieldAccessorTable(
               internal_static_ManagedLedgerInfo_LedgerInfo_descriptor,
-              new java.lang.String[] { "LedgerId", "Entries", "Size", "Timestamp", },
+              new java.lang.String[] { "LedgerId", "Entries", "Size", "Timestamp", "OffloadKey", },
               org.apache.bookkeeper.mledger.proto.MLDataFormats.ManagedLedgerInfo.LedgerInfo.class,
               org.apache.bookkeeper.mledger.proto.MLDataFormats.ManagedLedgerInfo.LedgerInfo.Builder.class);
           internal_static_PositionInfo_descriptor =

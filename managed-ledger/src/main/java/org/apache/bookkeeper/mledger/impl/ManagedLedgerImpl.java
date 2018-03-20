@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Queue;
 import java.util.Random;
+import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -193,6 +194,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
 
     private final ScheduledExecutorService scheduledExecutor;
     private final OrderedScheduler executor;
+    private final S3Offloader s3Offloader;
     final ManagedLedgerFactoryImpl factory;
     protected final ManagedLedgerMBeanImpl mbean;
 
@@ -214,6 +216,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
         this.name = name;
         this.scheduledExecutor = scheduledExecutor;
         this.executor = orderedExecutor;
+        this.s3Offloader = new S3Offloader(scheduledExecutor);
         TOTAL_SIZE_UPDATER.set(this, 0);
         NUMBER_OF_ENTRIES_UPDATER.set(this, 0);
         ENTRIES_ADDED_COUNTER_UPDATER.set(this, 0);
@@ -1301,6 +1304,8 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
             return ledgerHandle;
         }
 
+        LedgerInfo ledgerInfo = ledgers.get(ledgerId);
+
         // If not present try again and create if necessary
         return ledgerCache.computeIfAbsent(ledgerId, lid -> {
                 // Open the ledger for reading if it was not already opened
@@ -1309,11 +1314,16 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
                 }
                 mbean.startDataLedgerOpenOp();
 
-                CompletableFuture<ReadHandle> future = bookKeeper.newOpenLedgerOp()
-                    .withRecovery(true)
-                    .withLedgerId(ledgerId)
-                    .withDigestType(DigestType.valueOf(config.getDigestType().toString())) // don't submit
-                    .withPassword(config.getPassword()).execute();
+                CompletableFuture<ReadHandle> future;
+                if (ledgerInfo != null && ledgerInfo.hasOffloadKey()) {
+                    future = s3Offloader.openOffloadedLedger(ledgerInfo.getOffloadKey());
+                } else {
+                    future = bookKeeper.newOpenLedgerOp()
+                        .withRecovery(true)
+                        .withLedgerId(ledgerId)
+                        .withDigestType(DigestType.valueOf(config.getDigestType().toString())) // don't submit
+                        .withPassword(config.getPassword()).execute();
+                }
                 future.whenCompleteAsync((res,ex) -> {
                         mbean.endDataLedgerOpenOp();
                         if (ex != null) {
@@ -2229,7 +2239,95 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
 
     @Override
     public CompletableFuture<Void> offloadToS3() {
-        return CompletableFuture.completedFuture(null);
+        CompletableFuture<Void> promise = new CompletableFuture<>();
+
+        trimmerMutex.lock(); // don't do this at the same time as trimming
+
+        List<LedgerInfo> ledgersToOffload = Lists.newArrayList();
+        synchronized (this) {
+            log.info("[{}] Start ledgersOffload. ledgers={} totalSize={}", name, ledgers.keySet(),
+                     TOTAL_SIZE_UPDATER.get(this));
+
+            if (STATE_UPDATER.get(this) == State.Closed) {
+                log.info("[{}] Ignoring offload request since the managed ledger was already closed", name);
+                trimmerMutex.unlock();
+                promise.completeExceptionally(new Exception("managed ledger is closed"));
+                return promise;
+            }
+
+            long current = ledgers.lastKey();
+            ledgers.headMap(current);
+
+            for (LedgerInfo ls : ledgers.headMap(current).values()) {
+                ledgersToOffload.add(ls);
+            }
+            log.info("[{}] Going to offload ledgers {}", name, ledgersToOffload);
+
+            if (ledgersToOffload.isEmpty()) {
+                trimmerMutex.unlock();
+                promise.completeExceptionally(new Exception("nothing to offload"));
+                return promise;
+            }
+
+            List<CompletableFuture<String>> ids = ledgersToOffload.stream().map(info -> {
+                    return getLedgerHandle(info.getLedgerId())
+                        .thenCompose(readHandle -> s3Offloader.offload(readHandle));
+                }).collect(Collectors.toList());
+
+            ledgersListMutex.lock();
+
+            log.info("[{}] Wait for offload {}", name, ids);
+            CompletableFuture.allOf(ids.toArray(new CompletableFuture[0]))
+                .whenComplete((res, exception) -> {
+                        log.info("[{}] offload complete", name);
+                        if (exception != null) {
+                            log.info("[{}] offload exception", exception);
+                            promise.completeExceptionally(exception);
+                            return;
+                        }
+                        Iterator<CompletableFuture<String>> idsIter = ids.iterator();
+                        Iterator<LedgerInfo> toOffloadIter = ledgersToOffload.iterator();
+                        while (toOffloadIter.hasNext()) {
+                            LedgerInfo info = toOffloadIter.next();
+                            String id = idsIter.next().join();
+
+                            LedgerInfo newInfo = ledgers.get(info.getLedgerId()).toBuilder().setOffloadKey(id).build();
+                            ledgers.put(info.getLedgerId(), newInfo);
+                        }
+
+                        log.info("[{}] Updating of ledgers list after offloading", name);
+
+                        store.asyncUpdateLedgerIds(name, getManagedLedgerInfo(), ledgersStat, new MetaStoreCallback<Void>() {
+                                @Override
+                                public void operationComplete(Void result, Stat stat) {
+                                    log.info("[{}] End Offload. ledgers={} totalSize={}", name, ledgers.size(),
+                                             TOTAL_SIZE_UPDATER.get(ManagedLedgerImpl.this));
+                                    ledgersStat = stat;
+                                    ledgersListMutex.unlock();
+                                    trimmerMutex.unlock();
+
+                                    promise.complete(null);
+
+                                    for (LedgerInfo ls : ledgersToOffload) {
+                                        ledgerCache.remove(ls.getLedgerId());
+                                        log.info("[{}] Removing ledger {} - size: {}", name, ls.getLedgerId(), ls.getSize());
+                                        asyncDeleteLedger(ls.getLedgerId());
+                                    }
+                                }
+
+                                @Override
+                                public void operationFailed(MetaStoreException e) {
+                                    log.warn("[{}] Failed to update the list of ledgers after offloading", name, e);
+                                    ledgersListMutex.unlock();
+                                    trimmerMutex.unlock();
+
+                                    promise.completeExceptionally(e);
+                                }
+                            });
+                    });
+        }
+
+        return promise;
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerImpl.class);
