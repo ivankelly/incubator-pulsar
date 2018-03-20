@@ -900,4 +900,6 @@ public interface PersistentTopics {
      *            reset subscription to messageId (or previous nearest messageId if given messageId is not valid)
      */
     CompletableFuture<Void> resetCursorAsync(String topic, String subName, MessageId messageId);
+
+    void offloadToS3(String topic) throws PulsarAdminException;
 }

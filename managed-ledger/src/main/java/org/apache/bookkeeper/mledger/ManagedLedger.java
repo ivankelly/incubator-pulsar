@@ -18,6 +18,7 @@
  */
 package org.apache.bookkeeper.mledger;
 
+import java.util.concurrent.CompletableFuture;
 import com.google.common.annotations.Beta;
 import io.netty.buffer.ByteBuf;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback;
@@ -341,4 +342,6 @@ public interface ManagedLedger {
      * @return the last confirmed entry id
      */
     Position getLastConfirmedEntry();
+
+    CompletableFuture<Void> offloadToS3();
 }

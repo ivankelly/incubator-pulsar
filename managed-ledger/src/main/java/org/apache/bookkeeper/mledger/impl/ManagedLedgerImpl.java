@@ -2227,6 +2227,11 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
         }
     }
 
+    @Override
+    public CompletableFuture<Void> offloadToS3() {
+        return CompletableFuture.completedFuture(null);
+    }
+
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerImpl.class);
 
 }

@@ -1021,6 +1021,13 @@ public class PersistentTopicsBase extends AdminResource {
         }
     }
 
+    protected void internalOffloadToS3(boolean authoritative) {
+        validateAdminOperationOnTopic(authoritative);
+        Topic topic = getTopicReference(topicName);
+        // do the offload
+        ((PersistentTopic)topic).getManagedLedger().offloadToS3();
+    }
+
     protected void internalExpireMessages(String subName, int expireTimeInSeconds, boolean authoritative) {
         if (topicName.isGlobal()) {
             validateGlobalNamespaceOwnership(namespaceName);

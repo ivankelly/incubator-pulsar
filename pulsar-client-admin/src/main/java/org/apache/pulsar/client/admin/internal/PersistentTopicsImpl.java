@@ -806,5 +806,16 @@ public class PersistentTopicsImpl extends BaseResource implements PersistentTopi
         return ret;
     }
 
+    @Override
+    public void offloadToS3(String topic) throws PulsarAdminException {
+        try {
+            TopicName tn = validateTopic(topic);
+            WebTarget path = topicPath(tn, "offloadToS3");
+            request(path).put(Entity.entity("", MediaType.APPLICATION_JSON), ErrorData.class);
+        } catch (Exception e) {
+            throw getApiException(e);
+        }
+    }
+
     private static final Logger log = LoggerFactory.getLogger(PersistentTopicsImpl.class);
 }
