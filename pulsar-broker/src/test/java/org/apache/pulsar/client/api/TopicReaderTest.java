@@ -448,4 +448,34 @@ public class TopicReaderTest extends ProducerConsumerBase {
         assertFalse(reader.hasMessageAvailable());
         producer.close();
     }
+
+    @Test
+    public void testMessageAvailableAfterRestart() throws Exception {
+        String topic = "persistent://my-property/use/my-ns/testMessageAvailableAfterRestart";
+        // stop retention from cleaning up
+        pulsarClient.newConsumer().topic(topic).subscriptionName("sub1").subscribe().close();
+
+        try (Reader<byte[]> reader = pulsarClient.newReader().topic(topic)
+                .startMessageId(MessageId.earliest).create()) {
+            assertFalse(reader.hasMessageAvailable());
+        }
+
+        try (Producer<byte[]> producer = pulsarClient.newProducer().topic(topic).create()) {
+            producer.send("my-message-1".getBytes());
+        }
+
+        try (Reader<byte[]> reader = pulsarClient.newReader().topic(topic)
+                .startMessageId(MessageId.earliest).create()) {
+            assertTrue(reader.hasMessageAvailable());
+        }
+
+        // cause broker to drop topic. Will be loaded next time we access it
+        pulsar.getBrokerService().getTopicReference(topic).get().close().get();
+
+        try (Reader<byte[]> reader = pulsarClient.newReader().topic(topic)
+                .startMessageId(MessageId.earliest).create()) {
+            assertTrue(reader.hasMessageAvailable());
+        }
+
+    }
 }
