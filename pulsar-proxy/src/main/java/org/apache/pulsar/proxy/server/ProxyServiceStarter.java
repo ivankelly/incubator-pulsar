@@ -116,21 +116,25 @@ public class ProxyServiceStarter {
 
         java.security.Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
 
+        log.info("IKDEBUG Should be starting services");
         // create proxy service
         ProxyService proxyService = new ProxyService(config);
         // create a web-service
         final WebServer server = new WebServer(config);
+        final MqttService mqtt = new MqttService(config);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 proxyService.close();
                 server.stop();
+                mqtt.stopAsync();
             } catch (Exception e) {
                 log.warn("server couldn't stop gracefully {}", e.getMessage(), e);
             }
         }));
 
         proxyService.start();
+        mqtt.startAsync();
 
         // Setup metrics
         DefaultExports.initialize();
