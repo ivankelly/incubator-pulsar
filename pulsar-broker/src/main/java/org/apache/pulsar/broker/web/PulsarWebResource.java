@@ -224,7 +224,8 @@ public abstract class PulsarWebResource {
                     || tenantInfo.getAdminRoles().contains(clientAppId);
                 boolean originalPrincipalAuthorized = !StringUtils.isBlank(originalPrincipal)
                     && !pulsar.getConfiguration().getProxyRoles().contains(originalPrincipal)
-                    && tenantInfo.getAdminRoles().contains(originalPrincipal);
+                    && (pulsar.getConfiguration().getSuperUserRoles().contains(originalPrincipal)
+                        || tenantInfo.getAdminRoles().contains(originalPrincipal));
 
                 if (!proxyAuthorized || !originalPrincipalAuthorized) {
                     throw new RestException(Status.UNAUTHORIZED,
