@@ -34,6 +34,7 @@ import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.spec.KeySpec;
@@ -56,7 +57,11 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class SecurityUtility {
+    private static final Logger log = LoggerFactory.getLogger(SecurityUtility.class);
 
     public static SSLContext createSslContext(boolean allowInsecureConnection, Certificate[] trustCertificates)
             throws GeneralSecurityException {
@@ -156,7 +161,48 @@ public class SecurityUtility {
 
             trustManagers = tmf.getTrustManagers();
         }
-        return trustManagers;
+        log.info("IKDEBUG Trust managers {} - {}", trustManagers.length, trustManagers);
+        TrustManager[] wrapped = new TrustManager[trustManagers.length];
+        for (int i =0; i < trustManagers.length; i++) {
+            wrapped[i] = new TrustManagerWrapper(trustManagers[i]);
+        }
+        return wrapped;
+    }
+
+    private static class TrustManagerWrapper implements javax.net.ssl.X509TrustManager {
+        javax.net.ssl.X509TrustManager tm;
+        TrustManagerWrapper(TrustManager tm) {
+            if (tm instanceof javax.net.ssl.X509TrustManager) {
+                this.tm = (javax.net.ssl.X509TrustManager)tm;
+            } else {
+                throw new RuntimeException("huh?");
+            }
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain,
+                                String authType)
+                throws CertificateException {
+            log.info("IKDEBUG check client trusted - {}", authType);
+
+            for (X509Certificate cert : chain) {
+                log.info("Subject Key Identifier {}", cert.getExtensionValue("2.5.29.14"));
+            }
+            tm.checkClientTrusted(chain, authType);
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain,
+                                String authType)
+                throws CertificateException {
+            log.info("IKDEBUG check server trusted {} - {}", chain, authType);
+            tm.checkServerTrusted(chain, authType);
+        }
+
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            return tm.getAcceptedIssuers();
+        }
     }
 
     public static X509Certificate[] loadCertificatesFromPemFile(String certFilePath) throws KeyManagementException {
