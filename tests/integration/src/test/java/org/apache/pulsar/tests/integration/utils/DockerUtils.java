@@ -73,6 +73,7 @@ public class DockerUtils {
         File output = new File(getTargetDirectory(containerName), "docker.log");
         int i = 0;
         while (output.exists()) {
+            LOG.info("{} exists, incrementing", output);
             output = new File(getTargetDirectory(containerName), "docker." + i++ + ".log");
         }
         try (FileOutputStream os = new FileOutputStream(output)) {
@@ -124,7 +125,8 @@ public class DockerUtils {
         File output = new File(getTargetDirectory(containerName), baseName + ".tar.gz");
         int i = 0;
         while (output.exists()) {
-            output = new File(getTargetDirectory(containerName), baseName + "_" + i + ".tar.gz");
+            LOG.info("{} exists, incrementing", output);
+            output = new File(getTargetDirectory(containerName), baseName + "_" + i++ + ".tar.gz");
         }
         try (InputStream dockerStream = dockerClient.copyArchiveFromContainerCmd(containerId, path).exec();
              OutputStream os = new GZIPOutputStream(new FileOutputStream(output))) {
