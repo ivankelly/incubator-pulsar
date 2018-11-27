@@ -146,6 +146,7 @@ public class TestS3Offload extends PulsarTieredStorageTestSuite {
             // read back from topic
             for (int i = 0; i < ENTRIES_PER_LEDGER * 1.5; i++) {
                 Message m = consumer.receive(1, TimeUnit.MINUTES);
+                log.info("IKDEBUG read back entry {} msgid {}", i, m.getMessageId());
                 Assert.assertEquals(buildEntry("offload-message" + i), m.getData());
             }
         }
